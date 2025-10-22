@@ -1,4 +1,4 @@
-package com.example.delogica.integration;
+package com.example.delogica.integration.controllers;
 
 import com.example.delogica.ApiCommerceApplication;
 import com.example.delogica.config.errors.ErrorCode;

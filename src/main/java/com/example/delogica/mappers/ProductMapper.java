@@ -6,9 +6,7 @@ import com.example.delogica.models.*;
 import com.example.delogica.dtos.input.*;
 import com.example.delogica.dtos.output.*;
 
-@Mapper(componentModel = "spring",
-        unmappedTargetPolicy = ReportingPolicy.ERROR,
-        nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR, nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
 public interface ProductMapper {
 
     // INPUT → ENTITY
@@ -23,7 +21,7 @@ public interface ProductMapper {
     // ENTITY → OUTPUT
     ProductOutputDTO toOutput(Product entity);
 
-     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
