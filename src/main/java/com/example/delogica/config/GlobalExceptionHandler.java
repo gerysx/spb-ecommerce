@@ -78,7 +78,7 @@ public class GlobalExceptionHandler {
                 .path(request.getDescription(false).replace("uri=", ""))
                 .status(HttpStatus.BAD_REQUEST.value())
                 .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
-                .code(ErrorCode.BAD_REQUEST)
+                .code(ErrorCode.VALIDATION_ERROR)
                 .message(ex.getMessage())
                 .details(List.of()) // puedes añadir detalles si los tuvieras
                 .build();

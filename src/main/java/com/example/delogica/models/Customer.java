@@ -12,11 +12,16 @@ import java.util.List;
 @Table(name = "customers", indexes = {
         @Index(name = "idx_customer_email", columnList = "email", unique = true)
 })
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 @EqualsAndHashCode(of = "id")
 public class Customer {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, length = 120)
@@ -47,5 +52,17 @@ public class Customer {
     @PreUpdate
     void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+
+    public void addAddress(Address a) {
+        if (a == null) return;
+        addresses.add(a);
+        a.setCustomer(this);
+    }
+
+    public void removeAddress(Address a) {
+        if (a == null) return;
+        addresses.remove(a);
+        a.setCustomer(null);
     }
 }

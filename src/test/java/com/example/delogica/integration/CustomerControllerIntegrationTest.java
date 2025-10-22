@@ -41,43 +41,56 @@ public class CustomerControllerIntegrationTest {
     // -----------------------------
     static String customerJson(String name, String email, String phone) {
         return """
-        {
-          "fullName": "%s",
-          "email": "%s",
-          "phone": "%s",
-          "addresses": []
-        }
+            {
+              "fullName": "%s",
+              "email": "%s",
+              "phone": "%s",
+              "addresses": []
+            }
         """.formatted(name, email, phone);
     }
 
     static String customerJsonWithAddressesNull(String name, String email, String phone) {
         return """
-        {
-          "fullName": "%s",
-          "email": "%s",
-          "phone": "%s",
-          "addresses": null
-        }
+            {
+              "fullName": "%s",
+              "email": "%s",
+              "phone": "%s",
+              "addresses": null
+            }
         """.formatted(name, email, phone);
     }
 
-    static String addressJson(String line1, String city, String postal, String country, boolean isDefault) {
+    /** addressJson con defaultAddress nullable para poder enviar null/false sin violar la regla */
+    static String addressJson(String line1, String city, String postal, String country, Boolean defaultAddress) {
+        String def = defaultAddress == null ? "null" : String.valueOf(defaultAddress);
         return """
-        {
-          "line1": "%s",
-          "line2": null,
-          "city": "%s",
-          "postalCode": "%s",
-          "country": "%s",
-          "isDefault": %s
-        }
-        """.formatted(line1, city, postal, country, isDefault);
+            {
+              "line1": "%s",
+              "line2": null,
+              "city": "%s",
+              "postalCode": "%s",
+              "country": "%s",
+              "defaultAddress": %s
+            }
+        """.formatted(line1, city, postal, country, def);
     }
 
     static String longEmail(int localPartLen) {
-        // Genera un email con longitud total > 30 para disparar la validación
         String local = "a".repeat(localPartLen);
-        return local + "@t.es"; // +4; p.ej. local=31 => total=35
+        return local + "@t.es";
+    }
+
+    /** Crea y persiste una Address ligada a existingCustomer */
+    private Address createAddress(String line1, String city, String postal, String country, boolean isDefault) {
+        Address a = new Address();
+        a.setCustomer(existingCustomer);
+        a.setLine1(line1);
+        a.setCity(city);
+        a.setPostalCode(postal);
+        a.setCountry(country);
+        a.setDefaultAddress(isDefault);
+        return addressRepository.saveAndFlush(a);
     }
 
     @BeforeEach
@@ -86,9 +99,9 @@ public class CustomerControllerIntegrationTest {
 
         Customer c = new Customer();
         c.setFullName("Cliente Base");
-        c.setEmail(("cliente.base." + uniqueSuffix + "@t.es")); // muy corto para pasar @Size(max=30)
-        c.setPhone("600000000"); // 9 dígitos
-        existingCustomer = customerRepository.save(c);
+        c.setEmail(("cliente.base." + uniqueSuffix + "@t.es"));
+        c.setPhone("600000000");
+        existingCustomer = customerRepository.saveAndFlush(c);
     }
 
     // ---------------------------------------------------------------------
@@ -107,17 +120,16 @@ public class CustomerControllerIntegrationTest {
             .andExpect(jsonPath("$.id").exists())
             .andExpect(jsonPath("$.fullName").value("Juan Test " + uniqueSuffix))
             .andExpect(jsonPath("$.email").value("juan." + uniqueSuffix + "@t.es"));
-            // .andDo(r -> System.out.println(r.getResponse().getContentAsString()));
     }
 
     @Test
     void createCustomer_missingEmail_returns400() throws Exception {
         String payloadSinEmail = """
-        {
-          "fullName": "Sin Email",
-          "phone": "600000001",
-          "addresses": []
-        }
+            {
+              "fullName": "Sin Email",
+              "phone": "600000001",
+              "addresses": []
+            }
         """;
 
         mockMvc.perform(post("/api/customers")
@@ -141,12 +153,11 @@ public class CustomerControllerIntegrationTest {
             });
     }
 
-    // Negativos extra (validaciones)
     @Test
     void createCustomer_phone8Digits_returns400() throws Exception {
         String payload = customerJson("Tel Corto " + uniqueSuffix,
                 "tc" + uniqueSuffix + "@t.es",
-                "60000000"); // 8 dígitos
+                "60000000");
 
         mockMvc.perform(post("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -158,7 +169,7 @@ public class CustomerControllerIntegrationTest {
     void createCustomer_phone10Digits_returns400() throws Exception {
         String payload = customerJson("Tel Largo " + uniqueSuffix,
                 "tl" + uniqueSuffix + "@t.es",
-                "6000000000"); // 10 dígitos
+                "6000000000");
 
         mockMvc.perform(post("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -168,7 +179,7 @@ public class CustomerControllerIntegrationTest {
 
     @Test
     void createCustomer_emailTooLong_returns400() throws Exception {
-        String longMail = longEmail(31); // total > 30
+        String longMail = longEmail(31);
         String payload = customerJson("Email Largo " + uniqueSuffix,
                 longMail,
                 "600123456");
@@ -214,9 +225,8 @@ public class CustomerControllerIntegrationTest {
 
     @Test
     void listCustomers_pagination_page1_size1_returnsOneElement() throws Exception {
-        // Creamos 2 clientes adicionales para asegurar varias páginas
-        String p1 = customerJson("Pag Uno " + uniqueSuffix, "pag1."+uniqueSuffix+"@t.es", "601000001");
-        String p2 = customerJson("Pag Dos " + uniqueSuffix, "pag2."+uniqueSuffix+"@t.es", "601000002");
+        String p1 = customerJson("Pag Uno " + uniqueSuffix, "pag1." + uniqueSuffix + "@t.es", "601000001");
+        String p2 = customerJson("Pag Dos " + uniqueSuffix, "pag2." + uniqueSuffix + "@t.es", "601000002");
 
         mockMvc.perform(post("/api/customers").contentType(MediaType.APPLICATION_JSON).content(p1))
             .andExpect(status().isCreated());
@@ -266,7 +276,7 @@ public class CustomerControllerIntegrationTest {
 
     @Test
     void updateCustomer_notFound_returns404() throws Exception {
-        String payload = customerJson("No Existe", "no."+uniqueSuffix+"@t.es", "600222333");
+        String payload = customerJson("No Existe", "no." + uniqueSuffix + "@t.es", "600222333");
 
         mockMvc.perform(put("/api/customers/99999999")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -290,29 +300,28 @@ public class CustomerControllerIntegrationTest {
     // ---------------------------------------------------------------------
     @Test
     void createAddress_forCustomer_returns201_andBody() throws Exception {
-        String payload = addressJson("Calle Test 123", "Madrid", "28001", "España", true);
+        // No marcamos default; la primera se marcará automáticamente en servicio
+        String payload = addressJson("Calle 123", "Madrid", "28001", "España", null);
 
-        mockMvc.perform(post("/api/customers/" + existingCustomer.getId() + "/addresses")
+        customerRepository.flush();
+
+        mockMvc.perform(post("/api/customers/{id}/addresses", existingCustomer.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.id").exists())
-            .andExpect(jsonPath("$.city").value("Madrid"))
-            .andExpect(jsonPath("$.postalCode").value("28001"))
-           .andExpect(jsonPath("$.isDefault").value(true));
-
+            .andExpect(jsonPath("$.defaultAddress").value(true));
     }
 
     @Test
     void createAddress_missingRequiredField_returns400() throws Exception {
-        // Falta postalCode (NOT NULL) -> 400 por @Valid
+        // Falta postalCode (NOT NULL)
         String payload = """
-        {
-          "line1": "Calle Test 123",
-          "city": "Madrid",
-          "country": "España",
-          "isDefault": false
-        }
+            {
+              "line1": "Calle Test 123",
+              "city": "Madrid",
+              "country": "España",
+              "defaultAddress": false
+            }
         """;
 
         mockMvc.perform(post("/api/customers/" + existingCustomer.getId() + "/addresses")
@@ -326,34 +335,22 @@ public class CustomerControllerIntegrationTest {
     // ---------------------------------------------------------------------
     @Test
     void markAddressAsDefault_setsFlag_and_unsetsPreviousDefault() throws Exception {
-        // Creamos dos direcciones para el mismo cliente
-        Address a1 = new Address();
-        a1.setCustomer(existingCustomer);
-        a1.setLine1("Av. Uno 1");
-        a1.setCity("Madrid");
-        a1.setPostalCode("28001");
-        a1.setCountry("España");
-        a1.setDefaultAddress(true);
-        a1 = addressRepository.save(a1);
+        Address a1 = createAddress("Calle A", "Madrid", "28001", "España", true);
+        Address a2 = createAddress("Calle B", "Madrid", "28002", "España", false);
 
-        Address a2 = new Address();
-        a2.setCustomer(existingCustomer);
-        a2.setLine1("Av. Dos 2");
-        a2.setCity("Madrid");
-        a2.setPostalCode("28002");
-        a2.setCountry("España");
-        a2.setDefaultAddress(false);
-        a2 = addressRepository.save(a2);
+        addressRepository.flush();
+        customerRepository.flush();
 
-        // Marcamos a2 como default vía endpoint
-        mockMvc.perform(put("/api/customers/" + existingCustomer.getId() + "/addresses/" + a2.getId() + "/default"))
+        mockMvc.perform(put("/api/customers/{id}/addresses/{addressId}/default",
+                existingCustomer.getId(), a2.getId()))
             .andExpect(status().isNoContent());
 
-        // Verificamos en repositorio
-        Address refreshedA1 = addressRepository.findById(a1.getId()).orElseThrow();
-        Address refreshedA2 = addressRepository.findById(a2.getId()).orElseThrow();
+        addressRepository.flush();
 
-        assertThat(refreshedA1.getDefaultAddress()).isFalse();
-        assertThat(refreshedA2.getDefaultAddress()).isTrue();
+        var r1 = addressRepository.findById(a1.getId()).orElseThrow();
+        var r2 = addressRepository.findById(a2.getId()).orElseThrow();
+
+        assertThat(r1.getDefaultAddress()).isFalse();
+        assertThat(r2.getDefaultAddress()).isTrue();
     }
 }

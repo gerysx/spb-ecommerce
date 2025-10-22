@@ -1,4 +1,3 @@
-// src/main/java/com/example/delogica/repositories/AddressRepository.java
 package com.example.delogica.repositories;
 
 import java.util.List;
@@ -11,18 +10,15 @@ import com.example.delogica.models.Address;
 
 public interface AddressRepository extends JpaRepository<Address, Long> {
 
-    // Para PUT /api/customers/{id}/addresses/{addressId}/default
     Optional<Address> findByIdAndCustomerId(Long id, Long customerId);
 
-    // Listar direcciones de un cliente
     List<Address> findByCustomerId(Long customerId);
 
-    // Desmarcar cualquier predeterminada del cliente
+    // Desmarca todas menos la que quieres mantener
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Address a SET a.defaultAddress = false WHERE a.customer.id = :customerId AND a.defaultAddress = true")
-    int clearDefaultForCustomer(@Param("customerId") Long customerId);
+    @Query("update Address a set a.defaultAddress = false where a.customer.id = :customerId and a.id <> :keepId")
+    int clearDefaultForCustomerExcept(@Param("customerId") Long customerId, @Param("keepId") Long keepId);
 
-    // Localizar la actual predeterminada si existe
+    // Localiza la actual predeterminada (sin params extra)
     Optional<Address> findByCustomerIdAndDefaultAddressTrue(Long customerId);
-
 }

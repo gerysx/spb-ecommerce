@@ -1,33 +1,24 @@
-// AddressMapper.java
 package com.example.delogica.mappers;
 
 import org.mapstruct.*;
 import com.example.delogica.models.Address;
-import com.example.delogica.models.Customer;
 import com.example.delogica.dtos.input.AddressInputDTO;
 import com.example.delogica.dtos.output.AddressOutputDTO;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR)
 public interface AddressMapper {
 
-    // Usado desde AddressService (con customerId)
+    // Nunca copiar customer ni defaultAddress desde el DTO
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "customer", ignore = true)
-    @Mapping(target = "defaultAddress", source = "defaultAddress")
+    @Mapping(target = "defaultAddress", ignore = true)
     Address toEntity(AddressInputDTO dto);
 
     AddressOutputDTO toOutput(Address entity);
 
-
-    @Mapping(target = "id", ignore = true) // o no, depende si quieres actualizar id
+    // En updates también ignoramos customer y defaultAddress
+    @Mapping(target = "id", ignore = true)
     @Mapping(target = "customer", ignore = true)
+    @Mapping(target = "defaultAddress", ignore = true)
     void updateEntityFromDto(AddressInputDTO dto, @MappingTarget Address entity);
-
-    @AfterMapping
-    default void attachCustomer(@MappingTarget Address address, @Context Customer customer) {
-        if (customer != null) {
-            address.setCustomer(customer);
-        }
-    }
-
 }

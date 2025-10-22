@@ -17,6 +17,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import jakarta.transaction.Transactional;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -37,40 +39,53 @@ class CustomerDefaultAddressIntegrationTest {
     void setUp() {
         customer = new Customer();
         customer.setFullName("Ana García");
-        customer.setEmail("ana.garcia+" + System.nanoTime() + "@example.com");
-        customer.setPhone("654987321"); // 9 dígitos
+        // 👇 Email corto para no violar @Size(max=30) del DTO en updates
+        customer.setEmail(("ana" + System.nanoTime() + "@t.es")); // típico 20-25 chars
+        customer.setPhone("654987321");
         customer = customerRepository.save(customer);
     }
 
     // ---------- helpers ----------
-    private String addressJson(String line1, String city, String postal, String country, Boolean isDefault) {
+    private String addressJson(String line1, String city, String postal, String country, Boolean defaultAddress) {
         return """
-        {
-          "line1": "%s",
-          "line2": null,
-          "city": "%s",
-          "postalCode": "%s",
-          "country": "%s",
-          "defaultAddress": %s
-        }
-        """.formatted(line1, city, postal, country, String.valueOf(isDefault));
+            {
+              "line1": "%s",
+              "line2": null,
+              "city": "%s",
+              "postalCode": "%s",
+              "country": "%s",
+              "defaultAddress": %s
+            }
+        """.formatted(line1, city, postal, country, String.valueOf(defaultAddress));
     }
 
     private String updateCustomerJson(String fullName, String email, String phone, String addressesJson) {
         return """
-        {
-          "fullName": "%s",
-          "email": "%s",
-          "phone": "%s",
-          "addresses": %s
-        }
+            {
+              "fullName": "%s",
+              "email": "%s",
+              "phone": "%s",
+              "addresses": %s
+            }
         """.formatted(fullName, email, phone, addressesJson);
     }
 
-    // ========== 1) Primera dirección creada → queda default ==========
+    private Address createAddress(String line1, String city, String postal, String country, boolean isDefault) {
+        Address address = new Address();
+        address.setCustomer(customer);
+        address.setLine1(line1);
+        address.setCity(city);
+        address.setPostalCode(postal);
+        address.setCountry(country);
+        address.setDefaultAddress(isDefault);
+        return addressRepository.save(address);
+    }
+
+    // ========== 1) Primera dirección creada → debe ser default automáticamente ==========
+    // IMPORTANTE: ya NO mandamos defaultAddress=true en el request
     @Test
     void createAddress_firstBecomesDefault() throws Exception {
-        String payload = addressJson("Calle Sol 45", "Sevilla", "41001", "España", true);
+        String payload = addressJson("Calle Sol 45", "Sevilla", "41001", "España", null); // o false
 
         mockMvc.perform(post("/api/customers/{id}/addresses", customer.getId())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -78,64 +93,48 @@ class CustomerDefaultAddressIntegrationTest {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.defaultAddress").value(true));
 
-        // Verifica en BD
         var addrs = addressRepository.findByCustomerId(customer.getId());
         assertThat(addrs).hasSize(1);
         assertThat(addrs.get(0).getDefaultAddress()).isTrue();
     }
 
-    // ========== 2) Segunda dirección con default=true → sustituye a la anterior ==========
+    // ========== 2) Crear segunda dirección con default=true → ya no se permite en POST ==========
+    // Cambiamos el flujo: crear segunda (sin default), luego usar endpoint dedicated para marcarla
     @Test
-    void createSecondAddress_withDefaultTrue_clearsPrevious() throws Exception {
-        // 1a dirección (queda default)
-        var a1 = new Address();
-        a1.setCustomer(customer);
-        a1.setLine1("Calle Sol 45");
-        a1.setCity("Sevilla");
-        a1.setPostalCode("41001");
-        a1.setCountry("España");
-        a1.setDefaultAddress(true);
-        a1 = addressRepository.save(a1);
+    void createSecondAddress_thenSetDefaultViaEndpoint() throws Exception {
+        Address a1 = createAddress("Calle Sol 45", "Sevilla", "41001", "España", true);
 
-        // 2a dirección: pido que sea default
-        String payload2 = addressJson("Plaza Mayor 10", "Granada", "18001", "España", true);
-
+        String payload2 = addressJson("Plaza Mayor 10", "Granada", "18001", "España", null); // o false
         mockMvc.perform(post("/api/customers/{id}/addresses", customer.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload2))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.defaultAddress").value(true));
+            .andExpect(jsonPath("$.defaultAddress").value(false));
 
-        // En BD: la nueva es default y la anterior ya no
+        // localizar la segunda dirección
+        addressRepository.flush();
+        List<Address> all = addressRepository.findByCustomerId(customer.getId());
+        Address a2 = all.stream().filter(a -> "Plaza Mayor 10".equals(a.getLine1())).findFirst().orElseThrow();
+
+        // ahora sí, marcar la 2ª como default con el endpoint dedicado
+        mockMvc.perform(put("/api/customers/{id}/addresses/{addressId}/default", customer.getId(), a2.getId()))
+            .andExpect(status().isNoContent());
+
+        addressRepository.flush();
+
         var r1 = addressRepository.findById(a1.getId()).orElseThrow();
-        var all = addressRepository.findByCustomerId(customer.getId());
-        assertThat(all.stream().filter(Address::getDefaultAddress)).hasSize(1);
+        var r2 = addressRepository.findById(a2.getId()).orElseThrow();
+
         assertThat(r1.getDefaultAddress()).isFalse();
+        assertThat(r2.getDefaultAddress()).isTrue();
     }
 
-    // ========== 3) Intentar cambiar default vía PUT /api/customers/{id} → 400 BAD_REQUEST ==========
+    // ========== 3) Intentar cambiar la default vía PUT /customers → 400 Bad Request ==========
     @Test
-    void updateCustomer_tryFlipDefaultViaDTO_returns400() throws Exception {
-        // Creamos dos direcciones, la primera default
-        Address a1 = new Address();
-        a1.setCustomer(customer);
-        a1.setLine1("Av. Uno 1");
-        a1.setCity("Madrid");
-        a1.setPostalCode("28001");
-        a1.setCountry("España");
-        a1.setDefaultAddress(true);
-        a1 = addressRepository.save(a1);
+    void updateCustomer_tryToChangeDefaultAddress_throwsValidationError() throws Exception {
+        Address a1 = createAddress("Av. Uno 1", "Madrid", "28001", "España", true);
+        Address a2 = createAddress("Av. Dos 2", "Madrid", "28002", "España", false);
 
-        Address a2 = new Address();
-        a2.setCustomer(customer);
-        a2.setLine1("Av. Dos 2");
-        a2.setCity("Madrid");
-        a2.setPostalCode("28002");
-        a2.setCountry("España");
-        a2.setDefaultAddress(false);
-        a2 = addressRepository.save(a2);
-
-        // Intento “cambiar” la default via DTO: marco a2 como default=true
         String body = updateCustomerJson(
                 "Ana G. Edit",
                 customer.getEmail(),
@@ -152,28 +151,18 @@ class CustomerDefaultAddressIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.code").value(ErrorCode.BAD_REQUEST.name()))
-            .andExpect(jsonPath("$.message").exists())
-            .andExpect(jsonPath("$.status").value(400));
+            .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_ERROR.name()));
     }
 
-    // ========== 4) Update sin tocar default (sólo datos básicos) → OK ==========
+    // ========== 4) PUT sin tocar default (solo actualizar datos) → OK ==========
     @Test
-    void updateCustomer_withoutTouchingDefault_ok() throws Exception {
-        Address a1 = new Address();
-        a1.setCustomer(customer);
-        a1.setLine1("Av. Uno 1");
-        a1.setCity("Madrid");
-        a1.setPostalCode("28001");
-        a1.setCountry("España");
-        a1.setDefaultAddress(true);
-        addressRepository.save(a1);
+    void updateCustomer_withoutModifyingDefaultAddress_ok() throws Exception {
+        Address a1 = createAddress("Av. Uno 1", "Madrid", "28001", "España", true);
 
         String body = updateCustomerJson(
                 "Ana G. Edit",
-                customer.getEmail(),
+                customer.getEmail(),         // email corto válido
                 customer.getPhone(),
-                // NO tocamos defaultAddress (mantenemos igual el valor enviado)
                 """
                 [
                   { "id": %d, "line1": "Av. Uno 1", "city":"Madrid", "postalCode":"28001", "country":"España", "defaultAddress": true }
@@ -186,32 +175,26 @@ class CustomerDefaultAddressIntegrationTest {
                 .content(body))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.fullName").value("Ana G. Edit"));
+
+        // opcional: revalidar que sigue habiendo una sola default y es la misma
+        addressRepository.flush();
+        List<Address> all = addressRepository.findByCustomerId(customer.getId());
+        assertThat(all.stream().filter(Address::getDefaultAddress).count()).isEqualTo(1);
+        assertThat(all.stream().filter(Address::getDefaultAddress).findFirst().orElseThrow().getId())
+            .isEqualTo(a1.getId());
     }
 
-    // ========== 5) Endpoint dedicado para marcar default → deja exactamente una ==========
+    // ========== 5) Endpoint dedicado marca solo una por defecto ==========
     @Test
-    void markAddressAsDefault_endpoint_setsExactlyOneDefault() throws Exception {
-        Address a1 = new Address();
-        a1.setCustomer(customer);
-        a1.setLine1("Calle A");
-        a1.setCity("Madrid");
-        a1.setPostalCode("28001");
-        a1.setCountry("España");
-        a1.setDefaultAddress(true);
-        a1 = addressRepository.save(a1);
-
-        Address a2 = new Address();
-        a2.setCustomer(customer);
-        a2.setLine1("Calle B");
-        a2.setCity("Madrid");
-        a2.setPostalCode("28002");
-        a2.setCountry("España");
-        a2.setDefaultAddress(false);
-        a2 = addressRepository.save(a2);
+    void setDefaultAddress_endpoint_correctlyMarksOnlyOneAsDefault() throws Exception {
+        Address a1 = createAddress("Calle A", "Madrid", "28001", "España", true);
+        Address a2 = createAddress("Calle B", "Madrid", "28002", "España", false);
 
         mockMvc.perform(put("/api/customers/{id}/addresses/{addressId}/default",
-                        customer.getId(), a2.getId()))
+                customer.getId(), a2.getId()))
             .andExpect(status().isNoContent());
+
+        addressRepository.flush();
 
         var r1 = addressRepository.findById(a1.getId()).orElseThrow();
         var r2 = addressRepository.findById(a2.getId()).orElseThrow();

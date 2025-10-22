@@ -2,17 +2,18 @@ package com.example.delogica.unit.services;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+
 import com.example.delogica.config.exceptions.EmailAlreadyInUseException;
 import com.example.delogica.config.exceptions.ResourceNotFoundException;
 import com.example.delogica.dtos.input.AddressInputDTO;
 import com.example.delogica.dtos.input.CustomerInputDTO;
-import com.example.delogica.dtos.output.AddressOutputDTO;
 import com.example.delogica.dtos.output.CustomerOutputDTO;
 import com.example.delogica.mappers.AddressMapper;
 import com.example.delogica.mappers.CustomerMapper;
@@ -22,309 +23,302 @@ import com.example.delogica.repositories.AddressRepository;
 import com.example.delogica.repositories.CustomerRepository;
 import com.example.delogica.services.impl.CustomerServiceImpl;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class CustomerServiceImplTest {
 
-    @Mock
-    private CustomerRepository customerRepository;
+    @Mock CustomerRepository customerRepository;
+    @Mock CustomerMapper customerMapper;
+    @Mock AddressRepository addressRepository;
+    @Mock AddressMapper addressMapper;
 
-    @Mock
-    private CustomerMapper customerMapper;
+    @InjectMocks CustomerServiceImpl customerService;
 
-    @Mock
-    private AddressRepository addressRepository;
-
-    @Mock
-    private AddressMapper addressMapper;
-
-    @InjectMocks
-    private CustomerServiceImpl customerService;
-
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-    }
-
-    // ------------- TEST FINDBYID() ---------------
+    // ---------- findById ----------
     @Test
     void testFindById_whenCustomerExists_returnsCustomerDTO() {
-        // Arrange
-        Long customerId = 1L;
-        Customer customer = new Customer();
-        customer.setId(customerId);
+        Long id = 1L;
+        Customer c = new Customer();
+        c.setId(id);
 
-        CustomerOutputDTO dto = new CustomerOutputDTO();
-        dto.setId(customerId);
+        CustomerOutputDTO out = new CustomerOutputDTO();
+        out.setId(id);
 
-        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
-        when(customerMapper.toOutput(customer)).thenReturn(dto);
+        when(customerRepository.findById(id)).thenReturn(Optional.of(c));
+        when(customerMapper.toOutput(c)).thenReturn(out);
 
-        // Act
-        CustomerOutputDTO result = customerService.findById(customerId);
+        CustomerOutputDTO result = customerService.findById(id);
 
-        // Assert
         assertNotNull(result);
-        assertEquals(customerId, result.getId());
+        assertEquals(id, result.getId());
+        verify(customerRepository).findById(id);
+        verify(customerMapper).toOutput(c);
     }
 
     @Test
     void testFindById_whenCustomerNotFound_throwsException() {
-        
-        Long customerId = 1L;
-        when(customerRepository.findById(customerId)).thenReturn(Optional.empty());
-
-        
-        assertThrows(ResourceNotFoundException.class, () -> {
-            customerService.findById(customerId);
-        });
+        when(customerRepository.findById(1L)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> customerService.findById(1L));
     }
 
-    // ------------- TEST CREATE() ---------------
+    // ---------- create ----------
     @Test
     void testCreate_whenEmailAlreadyUsed_throwsException() {
-        CustomerInputDTO input = new CustomerInputDTO();
-        input.setEmail("test@example.com");
+        CustomerInputDTO in = new CustomerInputDTO();
+        in.setEmail("test@acme.com");
 
-        when(customerRepository.findByEmail(input.getEmail())).thenReturn(Optional.of(new Customer()));
+        when(customerRepository.findByEmail("test@acme.com")).thenReturn(Optional.of(new Customer()));
 
-        assertThrows(EmailAlreadyInUseException.class, () -> {
-            customerService.create(input);
-        });
-
+        assertThrows(EmailAlreadyInUseException.class, () -> customerService.create(in));
         verify(customerRepository, never()).save(any());
     }
 
+ @Test
+void testCreate_whenValidInput_savesCustomer_andSetsSingleDefault() {
+    // input
+    CustomerInputDTO in = new CustomerInputDTO();
+    in.setEmail("ok@acme.com");
+
+    // (los DTOs de address dan igual aquí; el servicio no llama addressMapper en create)
+    // solo los añadimos si tu validador requiere lista no nula:
+    in.setAddresses(new java.util.ArrayList<>());
+
+    // entidad que devolverá el mapper de Customer, con 2 direcciones "como si" vinieran del DTO
+    Customer entity = new Customer();
+    entity.setAddresses(new java.util.ArrayList<>());
+
+    Address a1 = new Address(); a1.setLine1("Calle 1"); a1.setDefaultAddress(true);
+    Address a2 = new Address(); a2.setLine1("Calle 2"); a2.setDefaultAddress(true);
+    entity.getAddresses().add(a1);
+    entity.getAddresses().add(a2);
+
+    // lo que guardará el repo
+    Customer saved = new Customer();
+    saved.setId(10L);
+    // tras la lógica de create, debe quedar exactamente una default
+    a1.setDefaultAddress(true);
+    a2.setDefaultAddress(false);
+    saved.setAddresses(java.util.List.of(a1, a2));
+
+    CustomerOutputDTO out = new CustomerOutputDTO();
+    out.setId(10L);
+
+    // stubs necesarios y solo los necesarios
+    when(customerRepository.findByEmail("ok@acme.com")).thenReturn(java.util.Optional.empty());
+    when(customerMapper.toEntity(in)).thenReturn(entity);
+    when(customerRepository.save(entity)).thenReturn(saved);
+    when(customerMapper.toOutput(saved)).thenReturn(out);
+
+    // act
+    CustomerOutputDTO result = customerService.create(in);
+
+    // assert
+    assertNotNull(result);
+    assertEquals(10L, result.getId());
+    verify(customerRepository).save(entity);
+
+    // opcional: verificar que quedó una única default
+    long defaults = saved.getAddresses().stream().filter(Address::getDefaultAddress).count();
+    assertEquals(1L, defaults);
+}
+
+    // ---------- update ----------
     @Test
-    void testCreate_whenValidInput_savesCustomer() {
-        CustomerInputDTO input = new CustomerInputDTO();
-        input.setEmail("new@example.com");
-        // Simular que no hay direcciones o que las direcciones tienen defaultAddress
-        // configurado...
+void testUpdate_whenValidInput_updatesCustomer_andPreservesDefault() {
+    Long id = 1L;
 
-        Customer customerEntity = new Customer();
-        Customer savedCustomer = new Customer();
-        savedCustomer.setId(1L);
+    Customer existing = new Customer();
+    existing.setId(id);
+    Address ad1 = new Address(); ad1.setId(100L); ad1.setDefaultAddress(true);  ad1.setCustomer(existing);
+    Address ad2 = new Address(); ad2.setId(200L); ad2.setDefaultAddress(false); ad2.setCustomer(existing);
+    existing.setAddresses(new ArrayList<>(List.of(ad1, ad2)));
 
-        CustomerOutputDTO outputDTO = new CustomerOutputDTO();
-        outputDTO.setId(1L);
+    CustomerInputDTO in = new CustomerInputDTO();
+    in.setEmail("nuevo@acme.com");
+    AddressInputDTO ad1dto = new AddressInputDTO(); ad1dto.setId(100L); ad1dto.setLine1("Nueva 1"); ad1dto.setDefaultAddress(false);
+    AddressInputDTO ad2dto = new AddressInputDTO(); ad2dto.setId(200L); ad2dto.setLine1("Nueva 2"); ad2dto.setDefaultAddress(true);
+    in.setAddresses(List.of(ad1dto, ad2dto));
 
-        when(customerRepository.findByEmail(input.getEmail())).thenReturn(Optional.empty());
-        when(customerMapper.toEntity(input)).thenReturn(customerEntity);
-        when(customerRepository.save(customerEntity)).thenReturn(savedCustomer);
-        when(customerMapper.toOutput(savedCustomer)).thenReturn(outputDTO);
+    Customer saved = new Customer();
+    saved.setId(id);
+    ad1.setDefaultAddress(true);
+    ad2.setDefaultAddress(false);
+    saved.setAddresses(List.of(ad1, ad2));
 
-        CustomerOutputDTO result = customerService.create(input);
+    CustomerOutputDTO out = new CustomerOutputDTO();
+    out.setId(id);
+
+    when(customerRepository.findByIdWithLock(id)).thenReturn(Optional.of(existing));
+    when(customerRepository.findByEmail("nuevo@acme.com")).thenReturn(Optional.empty());
+    when(addressRepository.findById(100L)).thenReturn(Optional.of(ad1));
+    when(addressRepository.findById(200L)).thenReturn(Optional.of(ad2));
+    doAnswer(inv -> { existing.setEmail(in.getEmail()); return null; })
+        .when(customerMapper).updateEntityFromDto(eq(in), eq(existing));
+    doAnswer(inv -> { ad1.setLine1("Nueva 1"); return null; })
+        .when(addressMapper).updateEntityFromDto(eq(ad1dto), eq(ad1));
+    doAnswer(inv -> { ad2.setLine1("Nueva 2"); return null; })
+        .when(addressMapper).updateEntityFromDto(eq(ad2dto), eq(ad2));
+    when(customerRepository.save(existing)).thenReturn(saved);
+    when(customerMapper.toOutput(saved)).thenReturn(out);
+
+    CustomerOutputDTO result = customerService.update(id, in);
+
+    assertNotNull(result);
+    assertEquals(id, result.getId());
+    assertTrue(ad1.getDefaultAddress());
+    assertFalse(ad2.getDefaultAddress());
+    verify(customerRepository).save(existing);
+}
+
+    @Test
+    void testUpdate_whenAfterReplace_noDefault_remediesByAutoSelectingOne() {
+        Long id = 1L;
+
+        // Estado actual: una sola default
+        Customer existing = new Customer();
+        existing.setId(id);
+        Address ad1 = new Address(); ad1.setId(100L); ad1.setDefaultAddress(true); ad1.setCustomer(existing);
+        existing.setAddresses(new ArrayList<>(List.of(ad1)));
+
+        // DTO la elimina (no incluye ad1) y añade una nueva sin default
+        CustomerInputDTO in = new CustomerInputDTO();
+        AddressInputDTO newDto = new AddressInputDTO(); newDto.setLine1("Nueva");
+        in.setAddresses(List.of(newDto));
+
+        Address newEntity = new Address(); newEntity.setDefaultAddress(false);
+
+        Customer saved = new Customer();
+        saved.setId(id);
+        // el servicio debe dejar esta nueva como default automáticamente
+        newEntity.setDefaultAddress(true);
+        saved.setAddresses(List.of(newEntity));
+
+        CustomerOutputDTO out = new CustomerOutputDTO();
+        out.setId(id);
+
+        when(customerRepository.findByIdWithLock(id)).thenReturn(Optional.of(existing));
+        // creación de la nueva address desde mapper
+        when(addressMapper.toEntity(newDto)).thenReturn(newEntity);
+        when(customerRepository.save(any(Customer.class))).thenReturn(saved);
+        when(customerMapper.toOutput(saved)).thenReturn(out);
+
+        CustomerOutputDTO result = customerService.update(id, in);
 
         assertNotNull(result);
-        assertEquals(1L, result.getId());
-        verify(customerRepository).save(customerEntity);
+        assertTrue(saved.getAddresses().get(0).getDefaultAddress());
+        verify(customerRepository).save(any(Customer.class));
     }
 
-    // ------------- TEST UPDATE() ---------------
     @Test
-    void testUpdate_whenValidInput_updatesCustomerAndAddresses() {
-        // Arrange
-        Long customerId = 1L;
+void testUpdate_whenMultipleDefaults_detected_throwsException() {
+    Long id = 1L;
 
-        // Cliente original en DB
-        Customer customer = new Customer();
-        customer.setId(customerId);
-        customer.setAddresses(new ArrayList<>());
+    Customer existing = new Customer(); existing.setId(id);
+    Address a1 = new Address(); a1.setId(1L); a1.setCustomer(existing); a1.setDefaultAddress(true);
+    Address a2 = new Address(); a2.setId(2L); a2.setCustomer(existing); a2.setDefaultAddress(true);
+    existing.setAddresses(new ArrayList<>(List.of(a1, a2)));
 
-        // Input con datos para actualizar
-        CustomerInputDTO input = new CustomerInputDTO();
-        input.setEmail("nuevo@email.com");
+    CustomerInputDTO in = new CustomerInputDTO();
+    AddressInputDTO a1dto = new AddressInputDTO(); a1dto.setId(1L);
+    AddressInputDTO a2dto = new AddressInputDTO(); a2dto.setId(2L);
+    in.setAddresses(List.of(a1dto, a2dto));
 
-        // Direcciones: una existente (con id) y una nueva (sin id)
-        AddressInputDTO existingAddressDto = new AddressInputDTO();
-        existingAddressDto.setId(10L);
-        existingAddressDto.setDefaultAddress(true); // Se marca como default
+    when(customerRepository.findByIdWithLock(id)).thenReturn(Optional.of(existing));
+    when(addressRepository.findById(1L)).thenReturn(Optional.of(a1));
+    when(addressRepository.findById(2L)).thenReturn(Optional.of(a2));
+    doNothing().when(addressMapper).updateEntityFromDto(eq(a1dto), eq(a1));
+    doNothing().when(addressMapper).updateEntityFromDto(eq(a2dto), eq(a2));
 
-        AddressInputDTO newAddressDto = new AddressInputDTO();
-        newAddressDto.setDefaultAddress(false);
+    assertThrows(com.example.delogica.config.exceptions.DefaultAddressChangeNotAllowedException.class,
+        () -> customerService.update(id, in));
+    verify(customerRepository, never()).save(any());
+}
 
-        input.setAddresses(List.of(existingAddressDto, newAddressDto));
-
-        // Dirección existente en DB
-        Address existingAddress = new Address();
-        existingAddress.setId(10L);
-        existingAddress.setCustomer(customer);
-
-        when(customerRepository.findByIdWithLock(customerId)).thenReturn(Optional.of(customer));
-        when(addressRepository.findById(10L)).thenReturn(Optional.of(existingAddress));
-
-        // Simular update del cliente básico
-        doAnswer(invocation -> {
-            CustomerInputDTO dto = invocation.getArgument(0);
-            Customer cust = invocation.getArgument(1);
-            cust.setEmail(dto.getEmail());
-            return null;
-        }).when(customerMapper).updateEntityFromDto(any(), any());
-
-        // Simular update de dirección existente
-        doNothing().when(addressMapper).updateEntityFromDto(existingAddressDto, existingAddress);
-
-        // Simular creación de nueva dirección desde DTO
-        Address newAddress = new Address();
-        when(addressMapper.toEntity(newAddressDto)).thenReturn(newAddress);
-
-        // Simular guardado del cliente actualizado
-        Customer savedCustomer = new Customer();
-        savedCustomer.setId(customerId);
-        savedCustomer.setAddresses(List.of(existingAddress, newAddress));
-
-        when(customerRepository.save(any())).thenReturn(savedCustomer);
-
-        // Simular mapping final a DTO
-        CustomerOutputDTO outputDto = new CustomerOutputDTO();
-        outputDto.setId(customerId);
-        when(customerMapper.toOutput(savedCustomer)).thenReturn(outputDto);
-
-        // Act
-        CustomerOutputDTO result = customerService.update(customerId, input);
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(customerId, result.getId());
-
-        // Verificar que se normalizó defaultAddress (solo uno true)
-        assertTrue(input.getAddresses().stream().filter(AddressInputDTO::getDefaultAddress).count() == 1);
-
-        // Verificar que se llamó el update básico del cliente
-        verify(customerMapper).updateEntityFromDto(input, customer);
-
-        // Verificar que se buscó la dirección existente para actualizar
-        verify(addressRepository).findById(10L);
-
-        // Verificar que se guardó el cliente final
-        verify(customerRepository).save(customer);
-    }
-
-    // ------------- TEST DELETE() ---------------
+    // ---------- delete ----------
     @Test
     void testDelete_whenCustomerExists_deletesCustomer() {
-        Long customerId = 1L;
-        Customer customer = new Customer();
-        customer.setId(customerId);
+        Long id = 1L;
+        Customer c = new Customer(); c.setId(id);
 
-        when(customerRepository.findByIdWithLock(customerId)).thenReturn(Optional.of(customer));
-        doNothing().when(customerRepository).delete(customer);
+        when(customerRepository.findByIdWithLock(id)).thenReturn(Optional.of(c));
+        doNothing().when(customerRepository).delete(c);
 
-        assertDoesNotThrow(() -> customerService.delete(customerId));
-
-        verify(customerRepository).delete(customer);
+        assertDoesNotThrow(() -> customerService.delete(id));
+        verify(customerRepository).delete(c);
     }
 
     @Test
     void testDelete_whenCustomerNotFound_throwsException() {
-        Long customerId = 1L;
-        when(customerRepository.findByIdWithLock(customerId)).thenReturn(Optional.empty());
-
-        assertThrows(ResourceNotFoundException.class, () -> customerService.delete(customerId));
+        when(customerRepository.findByIdWithLock(1L)).thenReturn(Optional.empty());
+        assertThrows(ResourceNotFoundException.class, () -> customerService.delete(1L));
     }
 
-    // ------------- TEST CREATEADDRESS() ---------------
+    // ---------- createAddress ----------
     @Test
-    void testCreateAddress_whenNoDefaultAddress_setsNewAddressAsDefault() {
-        Long customerId = 1L;
-        Customer customer = new Customer();
-        customer.setId(customerId);
-        customer.setAddresses(new ArrayList<>()); 
+void testCreateAddress_whenFirstAddress_becomesDefault() {
+    Long customerId = 1L;
 
-        AddressInputDTO input = new AddressInputDTO();
-        input.setDefaultAddress(false); 
+    Customer cust = new Customer(); cust.setId(customerId);
+    cust.setAddresses(new ArrayList<>());
 
-        Address newAddress = new Address();
-        newAddress.setDefaultAddress(true);
-        newAddress.setCustomer(customer);
+    AddressInputDTO dto = new AddressInputDTO();
+    dto.setLine1("Calle 1");
+    dto.setDefaultAddress(null); // importante: no true
 
-        Address savedAddress = new Address();
-        savedAddress.setId(100L);
-        savedAddress.setDefaultAddress(true);
+    Address newAddr = new Address(); newAddr.setDefaultAddress(false);
 
-        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
-        when(addressMapper.toEntity(input)).thenReturn(newAddress);
-        when(addressRepository.save(newAddress)).thenReturn(savedAddress);
-        when(addressMapper.toOutput(savedAddress)).thenReturn(new AddressOutputDTO());
+    Customer saved = new Customer(); saved.setId(customerId);
+    newAddr.setDefaultAddress(true);
+    saved.setAddresses(List.of(newAddr));
 
-        AddressOutputDTO result = customerService.createAddress(customerId, input);
+    when(customerRepository.findByIdWithLock(customerId)).thenReturn(Optional.of(cust));
+    when(addressMapper.toEntity(dto)).thenReturn(newAddr);
+    when(customerRepository.save(cust)).thenReturn(saved);
+    when(addressMapper.toOutput(any(Address.class))).thenReturn(new com.example.delogica.dtos.output.AddressOutputDTO());
 
-        assertNotNull(result);
-        verify(addressRepository).save(newAddress);
-        assertTrue(newAddress.getDefaultAddress());
-    }
+    var result = customerService.createAddress(customerId, dto);
 
+    assertNotNull(result);
+    verify(customerRepository).save(cust);
+}
+
+    // ---------- setDefaultAddress ----------
     @Test
-    void testCreateAddress_whenExistingDefaultAddress_andNewIsDefault_clearsOldDefault() {
+    void testSetDefaultAddress_whenAddressExists_togglesProperly() {
         Long customerId = 1L;
+        Long toDefaultId = 200L;
 
-        Customer customer = new Customer();
-        customer.setId(customerId);
-        
-        customer.setAddresses(new ArrayList<>());
+        Customer cust = new Customer(); cust.setId(customerId);
+        Address a1 = new Address(); a1.setId(100L); a1.setDefaultAddress(true);  a1.setCustomer(cust);
+        Address a2 = new Address(); a2.setId(200L); a2.setDefaultAddress(false); a2.setCustomer(cust);
+        cust.setAddresses(new ArrayList<>(List.of(a1, a2)));
 
-        AddressInputDTO input = new AddressInputDTO();
-        input.setDefaultAddress(true); 
+        when(customerRepository.findByIdWithLock(customerId)).thenReturn(Optional.of(cust));
 
-        Address newAddress = new Address();
-        newAddress.setDefaultAddress(true);
-        newAddress.setCustomer(customer);
+        assertDoesNotThrow(() -> customerService.setDefaultAddress(customerId, toDefaultId));
 
-        Address savedAddress = new Address();
-        savedAddress.setId(100L);
-        savedAddress.setDefaultAddress(true);
-
-        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
-        when(addressMapper.toEntity(input)).thenReturn(newAddress);
-        when(addressRepository.save(newAddress)).thenReturn(savedAddress);
-        when(addressMapper.toOutput(savedAddress)).thenReturn(new AddressOutputDTO());
-
-        AddressOutputDTO result = customerService.createAddress(customerId, input);
-
-        assertNotNull(result);
-        verify(addressRepository).save(newAddress);
-        assertTrue(newAddress.getDefaultAddress());
-    }
-
-    // ------------- TEST SETDEFAULTADDRESS() ---------------
-    @Test
-    void testSetDefaultAddress_whenAddressBelongsToCustomer_setsDefault() {
-        Long customerId = 1L;
-        Long addressId = 10L;
-
-        Address address = new Address();
-        address.setId(addressId);
-        address.setCustomer(new Customer());
-        address.setDefaultAddress(false);
-
-        when(addressRepository.findByIdAndCustomerId(addressId, customerId)).thenReturn(Optional.of(address));
-        when(addressRepository.clearDefaultForCustomer(customerId)).thenReturn(1);
-
-        when(addressRepository.save(address)).thenReturn(address);
-
-        assertDoesNotThrow(() -> customerService.setDefaultAddress(customerId, addressId));
-
-        verify(addressRepository).clearDefaultForCustomer(customerId);
-        verify(addressRepository).save(address);
-        assertTrue(address.getDefaultAddress());
+        assertFalse(a1.getDefaultAddress());
+        assertTrue(a2.getDefaultAddress());
+        verify(customerRepository).save(cust);
     }
 
     @Test
-    void testSetDefaultAddress_whenAddressNotFound_throwsException() {
+    void testSetDefaultAddress_whenAddressDoesNotBelong_throwsNotFound() {
         Long customerId = 1L;
-        Long addressId = 10L;
+        Long wrongId = 999L;
 
-        when(addressRepository.findByIdAndCustomerId(addressId, customerId)).thenReturn(Optional.empty());
+        Customer cust = new Customer(); cust.setId(customerId);
+        Address a1 = new Address(); a1.setId(100L); a1.setDefaultAddress(true); a1.setCustomer(cust);
+        cust.setAddresses(new ArrayList<>(List.of(a1)));
 
-        assertThrows(ResourceNotFoundException.class, () -> customerService.setDefaultAddress(customerId, addressId));
+        when(customerRepository.findByIdWithLock(customerId)).thenReturn(Optional.of(cust));
+
+        assertThrows(ResourceNotFoundException.class, () -> customerService.setDefaultAddress(customerId, wrongId));
+        verify(customerRepository, never()).save(any());
     }
-
 }

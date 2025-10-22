@@ -3,6 +3,7 @@ package com.example.delogica.services.impl;
 import java.util.ArrayList;
 import java.util.List;
 
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,15 +57,25 @@ public class CustomerServiceImpl implements CustomerService {
         Customer customer = customerMapper.toEntity(input);
 
         if (customer.getAddresses() != null && !customer.getAddresses().isEmpty()) {
-            // relación inversa + limpiar defaults nulos
-            customer.getAddresses().forEach(a -> {
-                a.setCustomer(customer);
-                a.setDefaultAddress(Boolean.TRUE.equals(a.getDefaultAddress())); // normaliza null->false
-            });
+            // Usar helpers para cada dirección
+            List<Address> toAdd = new ArrayList<>(customer.getAddresses());
+            customer.getAddresses().clear();
 
-            boolean anyDefault = customer.getAddresses().stream().anyMatch(Address::getDefaultAddress);
-            if (!anyDefault) {
-                customer.getAddresses().get(0).setDefaultAddress(true);
+            // Garantizar que solo una sea default
+            boolean defaultFound = false;
+            for (Address addr : toAdd) {
+                if (Boolean.TRUE.equals(addr.getDefaultAddress())) {
+                    if (!defaultFound) {
+                        defaultFound = true;
+                    } else {
+                        addr.setDefaultAddress(false);
+                    }
+                }
+                customer.addAddress(addr);
+            }
+
+            if (!defaultFound && !toAdd.isEmpty()) {
+                toAdd.get(0).setDefaultAddress(true);
             }
         }
 
@@ -79,85 +90,6 @@ public class CustomerServiceImpl implements CustomerService {
         Customer findCustomer = customerRepository.findById(customerId)
                 .orElseThrow(() -> ResourceNotFoundException.forId(Customer.class, customerId));
         return customerMapper.toOutput(findCustomer);
-    }
-
-    @Override
-    @Transactional
-    public CustomerOutputDTO update(Long customerId, CustomerInputDTO input) {
-        logger.info("Actualizando cliente con id: {}", customerId);
-
-        Customer customer = customerRepository.findByIdWithLock(customerId)
-                .orElseThrow(() -> ResourceNotFoundException.forId(Customer.class, customerId));
-
-        // 1) Datos básicos
-        customerMapper.updateEntityFromDto(input, customer);
-
-        // 2) Detectar default actual
-        Long currentDefaultId = customer.getAddresses() == null ? null
-                : customer.getAddresses().stream()
-                        .filter(Address::getDefaultAddress)
-                        .map(Address::getId)
-                        .findFirst()
-                        .orElse(null);
-
-        // 3) ¿El payload intenta cambiar la default?
-        if (input.getAddresses() != null) {
-            boolean triesToSwitchDefault = input.getAddresses().stream().anyMatch(dto -> {
-                // Si marca default=true en una dirección distinta a la actual => intenta
-                // cambiar
-                Boolean wantsDefault = dto.getDefaultAddress();
-                if (Boolean.TRUE.equals(wantsDefault)) {
-                    // Si no hay default actual, permitiríamos que exista una (ver más abajo),
-                    // pero como la regla es NO cambiar default via PUT, sólo lo permitimos si
-                    // es la misma dirección que ya era default
-                    return currentDefaultId == null || (dto.getId() != null && !dto.getId().equals(currentDefaultId));
-                }
-                return false;
-            });
-
-            if (triesToSwitchDefault) {
-                throw new DefaultAddressChangeNotAllowedException();
-            }
-        }
-
-        // 4) Procesar direcciones SIN tocar defaultAddress
-        // (ignoramos cualquier default del DTO)
-        List<Address> toKeep = new ArrayList<>();
-        if (input.getAddresses() != null) {
-            for (AddressInputDTO dto : input.getAddresses()) {
-                if (dto.getId() != null) {
-                    Address existing = addressRepository.findById(dto.getId())
-                            .orElseThrow(() -> ResourceNotFoundException.forId(Address.class, dto.getId()));
-                    addressMapper.updateEntityFromDto(dto, existing);
-                    // mantenemos el default que tenía
-                    existing.setDefaultAddress(existing.getDefaultAddress() != null && existing.getDefaultAddress());
-                    existing.setCustomer(customer);
-                    toKeep.add(existing);
-                } else {
-                    Address newAddr = addressMapper.toEntity(dto);
-                    newAddr.setCustomer(customer);
-                    // toda nueva dirección creada por PUT no puede ser default aquí
-                    newAddr.setDefaultAddress(false);
-                    toKeep.add(newAddr);
-                }
-            }
-        }
-
-        // reemplazar la colección (PUT semántica)
-        customer.getAddresses().clear();
-        customer.getAddresses().addAll(toKeep);
-
-        // 5) Garantizar que quede EXACTAMENTE UNA default
-        boolean hasDefault = customer.getAddresses().stream().anyMatch(Address::getDefaultAddress);
-        if (!hasDefault && !customer.getAddresses().isEmpty()) {
-            // si se “perdió” la default (p.ej. se eliminó la que lo era),
-            // fuerza la primera como default
-            customer.getAddresses().get(0).setDefaultAddress(true);
-        }
-
-        Customer saved = customerRepository.save(customer);
-        logger.info("Cliente actualizado correctamente con id: {}", customerId);
-        return customerMapper.toOutput(saved);
     }
 
     @Override
@@ -185,68 +117,141 @@ public class CustomerServiceImpl implements CustomerService {
         return page.map(customerMapper::toOutput);
     }
 
-    @Override
-    @Transactional
-    public AddressOutputDTO createAddress(Long customerId, AddressInputDTO input) {
+   @Override
+@Transactional
+public AddressOutputDTO createAddress(Long customerId, AddressInputDTO input) {
+    logger.info("Creando dirección para cliente {} (defaultAddress en payload: {})",
+            customerId, input.getDefaultAddress());
 
-        Customer customer = customerRepository.findById(customerId)
-                .orElseThrow(() -> ResourceNotFoundException.forId(Customer.class, customerId));
+    // 1) Cargar cliente
+    Customer customer = customerRepository.findById(customerId)
+            .orElseThrow(() -> ResourceNotFoundException.forId(Customer.class, customerId));
 
-        Address newAddress = addressMapper.toEntity(input);
+    // 2) No permitir pedir default desde aquí
+    if (Boolean.TRUE.equals(input.getDefaultAddress())) {
+        logger.warn("Intento de marcar default por POST /addresses. Bloqueado.");
+        throw new DefaultAddressChangeNotAllowedException(
+                "No se permite cambiar la dirección por defecto desde esta operación.");
+    }
 
-        // Asignamos la relación inversa
-        newAddress.setCustomer(customer);
+    // 3) Comprobar si ya existe una default en BD (NO dependas de customer.getAddresses())
+    boolean existsDefault = addressRepository.findByCustomerIdAndDefaultAddressTrue(customerId).isPresent();
 
-        // Chequeamos si ya existe una dirección default
-        boolean hasDefault = customer.getAddresses() != null &&
-                customer.getAddresses().stream()
-                        .anyMatch(Address::getDefaultAddress);
+    // 4) Mapear y fijar el flag default correctamente
+    Address newAddress = addressMapper.toEntity(input);
+    newAddress.setCustomer(customer);
+    newAddress.setDefaultAddress(!existsDefault); // primera dirección -> true, si no -> false
 
-        if (!hasDefault) {
-            // Si no hay ninguna default, esta debe ser default sí o sí
-            newAddress.setDefaultAddress(true);
+    Address saved = addressRepository.save(newAddress);
+    logger.info("Dirección {} creada para cliente {} (default: {})", saved.getId(), customerId, saved.getDefaultAddress());
 
-        } else {
-            // Si ya hay una default y la nueva viene con isDefault = true, limpiamos la
-            // anterior
-            if (input.getDefaultAddress()) {
-                addressRepository.clearDefaultForCustomer(customerId);
-                newAddress.setDefaultAddress(true);
-            } else {
-                newAddress.setDefaultAddress(false);
+    return addressMapper.toOutput(saved);
+}
+
+@Override
+@Transactional
+public CustomerOutputDTO update(Long customerId, CustomerInputDTO input) {
+    logger.info("Actualizando cliente {} (se bloqueará cambio de defaultAddress)", customerId);
+
+    Customer customer = customerRepository.findByIdWithLock(customerId)
+            .orElseThrow(() -> ResourceNotFoundException.forId(Customer.class, customerId));
+
+    // Actualiza campos simples del cliente
+    customerMapper.updateEntityFromDto(input, customer);
+
+    // Si vienen direcciones en el DTO, procesamos merge
+    if (input.getAddresses() != null) {
+
+        // 1) ID de la default actual en BD (si existe)
+        Long currentDefaultId = addressRepository.findByCustomerIdAndDefaultAddressTrue(customerId)
+                .map(Address::getId)
+                .orElse(null);
+
+        // 2) Validación: no se puede cambiar la default desde aquí
+        for (AddressInputDTO dto : input.getAddresses()) {
+
+            // a) Si el DTO trae defaultAddress=true en una nueva -> prohibido
+            if (dto.getId() == null && Boolean.TRUE.equals(dto.getDefaultAddress())) {
+                logger.warn("Intento de crear nueva dirección como default en PUT /customers");
+                throw new DefaultAddressChangeNotAllowedException(
+                        "No se permite cambiar la dirección por defecto desde esta operación.");
+            }
+
+            // b) Si es una existente y su flag default en el DTO difiere del estado real -> prohibido
+            if (dto.getId() != null && dto.getDefaultAddress() != null) {
+                Address existing = addressRepository.findByIdAndCustomerId(dto.getId(), customerId)
+                        .orElseThrow(() -> ResourceNotFoundException.forId(Address.class, dto.getId()));
+
+                boolean dtoDefault = Boolean.TRUE.equals(dto.getDefaultAddress());
+                boolean dbDefault  = Boolean.TRUE.equals(existing.getDefaultAddress());
+
+                if (dtoDefault != dbDefault) {
+                    logger.warn("Intento de modificar defaultAddress en PUT /customers (addrId={}, dto={}, db={})",
+                            dto.getId(), dtoDefault, dbDefault);
+                    throw new DefaultAddressChangeNotAllowedException(
+                            "No se permite cambiar la dirección por defecto desde esta operación.");
+                }
             }
         }
 
-        // Asegurarse que la lista de direcciones es mutable antes de añadir
-        if (customer.getAddresses() == null) {
-            customer.setAddresses(new ArrayList<>());
-        } else if (!(customer.getAddresses() instanceof ArrayList)) {
-            customer.setAddresses(new ArrayList<>(customer.getAddresses()));
+        // 3) Reconstruir la colección preservando la default
+        List<Address> rebuilt = new ArrayList<>();
+        for (AddressInputDTO dto : input.getAddresses()) {
+            if (dto.getId() != null) {
+                Address existing = addressRepository.findByIdAndCustomerId(dto.getId(), customerId)
+                        .orElseThrow(() -> ResourceNotFoundException.forId(Address.class, dto.getId()));
+
+                // Actualiza campos (sin tocar default)
+                addressMapper.updateEntityFromDto(dto, existing);
+                existing.setCustomer(customer);
+                existing.setDefaultAddress(Boolean.TRUE.equals(existing.getDefaultAddress())); // explícito
+
+                rebuilt.add(existing);
+
+            } else {
+                // Nueva dirección SIEMPRE entra con default=false aquí
+                Address created = addressMapper.toEntity(dto);
+                created.setCustomer(customer);
+                created.setDefaultAddress(false);
+                rebuilt.add(created);
+            }
         }
 
-        // Añadimos la nueva dirección
-        customer.getAddresses().add(newAddress);
+        // 4) Si no hay default en BD (caso borde: cliente sin direcciones antes) => fuerza una
+        boolean rebuiltHasDefault = rebuilt.stream().anyMatch(Address::getDefaultAddress);
+        if (currentDefaultId == null && !rebuiltHasDefault && !rebuilt.isEmpty()) {
+            logger.info("No había default previa; se fuerza la primera como default en el update.");
+            rebuilt.get(0).setDefaultAddress(true);
+        }
 
-        // Guardamos la nueva dirección
-        Address saved = addressRepository.save(newAddress);
-
-        return addressMapper.toOutput(saved);
+        // 5) Reemplazar colección del agregado
+        List<Address> old = new ArrayList<>(customer.getAddresses());
+        for (Address a : old) customer.removeAddress(a);
+        for (Address a : rebuilt) customer.addAddress(a);
     }
 
-    @Override
-    @Transactional
-    public void setDefaultAddress(Long customerId, Long addressId) {
-        // Validar que la dirección pertenece al cliente
-        Address address = addressRepository.findByIdAndCustomerId(addressId, customerId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Dirección no encontrada para el cliente con id: " + customerId));
+    Customer saved = customerRepository.save(customer);
+    logger.info("Cliente {} actualizado correctamente", customerId);
+    return customerMapper.toOutput(saved);
+}
 
-        // Limpiar cualquier dirección marcada como default previamente
-        addressRepository.clearDefaultForCustomer(customerId);
+@Override
+@Transactional
+public void setDefaultAddress(Long customerId, Long addressId) {
+    logger.info("Estableciendo dirección {} como default para cliente {}", addressId, customerId);
 
-        // Marcar esta dirección como default
-        address.setDefaultAddress(true);
+    Address target = addressRepository.findByIdAndCustomerId(addressId, customerId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                    "Dirección no encontrada para el cliente con id: " + customerId));
 
-        addressRepository.save(address);
+    // Desmarcar todas menos la target
+    addressRepository.clearDefaultForCustomerExcept(customerId, addressId);
+
+    if (Boolean.FALSE.equals(target.getDefaultAddress())) {
+        target.setDefaultAddress(true);
+        addressRepository.save(target);
     }
+
+    logger.info("Default establecida correctamente: cliente={}, address={}", customerId, addressId);
+}
 }
