@@ -5,10 +5,19 @@ import com.example.delogica.dtos.input.CustomerInputDTO;
 import com.example.delogica.dtos.output.AddressOutputDTO;
 import com.example.delogica.dtos.output.CustomerOutputDTO;
 import com.example.delogica.services.CustomerService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import org.springdoc.core.annotations.ParameterObject;
+import org.springdoc.core.converters.models.PageableAsQueryParam;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -21,14 +30,24 @@ import java.net.URI;
 @RestController
 @RequestMapping("/api/customers")
 @RequiredArgsConstructor
+@Tag(name = "Customers", description = "Operaciones de gestión de clientes y sus direcciones")
 public class CustomerController {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomerController.class);
     private final CustomerService customerService;
 
-    // POST /api/customers  -> 201 Created + Location
+    /**
+     * Crea un nuevo cliente y devuelve la representación creada junto a la cabecera
+     * Location
+     */
+    @Operation(summary = "Crear cliente", description = "Crea un nuevo cliente a partir del payload proporcionado y retorna la entidad creada junto con la cabecera Location")
+    @ApiResponse(responseCode = "201", description = "Cliente creado", content = @Content(schema = @Schema(implementation = CustomerOutputDTO.class)))
+    @ApiResponse(responseCode = "400", description = "Entrada inválida", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "Email ya en uso", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
     @PostMapping
-    public ResponseEntity<CustomerOutputDTO> createCustomer(@Valid @RequestBody CustomerInputDTO input) {
+    public ResponseEntity<CustomerOutputDTO> createCustomer(
+            @Valid @RequestBody @Parameter(description = "Datos del cliente a crear", required = true) CustomerInputDTO input) {
+
         logger.info("Creando cliente con email: {}", input.getEmail());
         CustomerOutputDTO created = customerService.create(input);
 
@@ -42,11 +61,17 @@ public class CustomerController {
         return ResponseEntity.created(location).body(created);
     }
 
-    // GET /api/customers  -> 200 OK (Page)
+    /**
+     * Lista clientes paginados con filtro opcional por email
+     */
+    @Operation(summary = "Listar clientes", description = "Obtiene una página de clientes, permitiendo filtrar por coincidencia parcial del email")
+    @ApiResponse(responseCode = "200", description = "Página de clientes", content = @Content(schema = @Schema(implementation = CustomerOutputDTO.class)))
+    @PageableAsQueryParam
     @GetMapping
     public Page<CustomerOutputDTO> listCustomers(
-            @RequestParam(required = false) String email,
-            Pageable pageable) {
+            @Parameter(description = "Filtro de búsqueda por email, coincidencia parcial") @RequestParam(required = false) String email,
+            @ParameterObject Pageable pageable) {
+
         logger.info("Listando clientes con filtro email: {}", email);
         Page<CustomerOutputDTO> result = (email != null && !email.isBlank())
                 ? customerService.searchCustomers(email, pageable)
@@ -55,40 +80,70 @@ public class CustomerController {
         return result;
     }
 
-    // GET /api/customers/{id}  -> 200 OK
+    /**
+     * Recupera un cliente por su identificador
+     */
+    @Operation(summary = "Obtener cliente por ID", description = "Devuelve el cliente asociado al identificador proporcionado")
+    @ApiResponse(responseCode = "200", description = "Cliente encontrado", content = @Content(schema = @Schema(implementation = CustomerOutputDTO.class)))
+    @ApiResponse(responseCode = "404", description = "Cliente no encontrado", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
     @GetMapping("/{id}")
-    public CustomerOutputDTO getCustomer(@PathVariable Long id) {
+    public CustomerOutputDTO getCustomer(
+            @Parameter(description = "Identificador del cliente", example = "123", required = true) @PathVariable Long id) {
+
         logger.info("Buscando cliente con ID: {}", id);
         CustomerOutputDTO customer = customerService.findById(id);
         logger.info("Cliente encontrado con ID: {}", id);
         return customer;
     }
 
-    // PUT /api/customers/{id}  -> 200 OK
+    /**
+     * Actualiza la información de un cliente existente
+     */
+    @Operation(summary = "Actualizar cliente", description = "Actualiza los datos del cliente indicado por ID")
+    @ApiResponse(responseCode = "200", description = "Cliente actualizado", content = @Content(schema = @Schema(implementation = CustomerOutputDTO.class)))
+    @ApiResponse(responseCode = "400", description = "Entrada inválida", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+    @ApiResponse(responseCode = "404", description = "Cliente o dirección no encontrada", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "No se permite cambiar la dirección por defecto desde esta operación", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
     @PutMapping("/{id}")
     public CustomerOutputDTO updateCustomer(
-            @PathVariable Long id,
-            @Valid @RequestBody CustomerInputDTO input) {
+            @Parameter(description = "Identificador del cliente", example = "123", required = true) @PathVariable Long id,
+            @Valid @RequestBody @Parameter(description = "Datos a actualizar del cliente", required = true) CustomerInputDTO input) {
+
         logger.info("Actualizando cliente con ID: {}", id);
         CustomerOutputDTO response = customerService.update(id, input);
         logger.info("Cliente actualizado con ID: {}", id);
         return response;
     }
 
-    // DELETE /api/customers/{id}  -> 204 No Content
+    /**
+     * Elimina un cliente existente
+     */
+    @Operation(summary = "Eliminar cliente", description = "Elimina el cliente indicado por ID")
+    @ApiResponse(responseCode = "204", description = "Cliente eliminado")
+    @ApiResponse(responseCode = "404", description = "Cliente no encontrado", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteCustomer(@PathVariable Long id) {
+    public void deleteCustomer(
+            @Parameter(description = "Identificador del cliente", example = "123", required = true) @PathVariable Long id) {
+
         logger.info("Eliminando cliente con ID: {}", id);
         customerService.delete(id);
         logger.info("Cliente eliminado con ID: {}", id);
     }
 
-    // POST /api/customers/{id}/addresses  -> 201 Created + Location
+    /**
+     * Crea una nueva dirección para un cliente
+     */
+    @Operation(summary = "Crear dirección de un cliente", description = "Crea una dirección para el cliente indicado. Si es la primera dirección del cliente, se marcará por defecto de forma automática. No se permite solicitar default por esta operación")
+    @ApiResponse(responseCode = "201", description = "Dirección creada", content = @Content(schema = @Schema(implementation = AddressOutputDTO.class)))
+    @ApiResponse(responseCode = "400", description = "Entrada inválida", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+    @ApiResponse(responseCode = "404", description = "Cliente no encontrado", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "Cambio de defaultAddress no permitido en esta operación", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
     @PostMapping("/{id}/addresses")
     public ResponseEntity<AddressOutputDTO> createAddress(
-            @PathVariable Long id,
-            @Valid @RequestBody AddressInputDTO input) {
+            @Parameter(description = "Identificador del cliente", example = "123", required = true) @PathVariable Long id,
+            @Valid @RequestBody @Parameter(description = "Datos de la nueva dirección", required = true) AddressInputDTO input) {
+
         logger.info("Creando dirección para cliente ID: {}", id);
         AddressOutputDTO created = customerService.createAddress(id, input);
 
@@ -102,12 +157,18 @@ public class CustomerController {
         return ResponseEntity.created(location).body(created);
     }
 
-    // PUT /api/customers/{id}/addresses/{addressId}/default  -> 204 No Content
+    /**
+     * Marca una dirección como predeterminada para un cliente
+     */
+    @Operation(summary = "Marcar dirección como predeterminada", description = "Establece la dirección indicada como la dirección por defecto del cliente. Las demás direcciones quedarán desmarcadas automáticamente")
+    @ApiResponse(responseCode = "204", description = "Default actualizada")
+    @ApiResponse(responseCode = "404", description = "Cliente o dirección no encontrada", content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
     @PutMapping("/{id}/addresses/{addressId}/default")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void markAddressAsDefault(
-            @PathVariable Long id,
-            @PathVariable Long addressId) {
+            @Parameter(description = "Identificador del cliente", example = "123", required = true) @PathVariable Long id,
+            @Parameter(description = "Identificador de la dirección", example = "45", required = true) @PathVariable Long addressId) {
+
         logger.info("Marcando dirección {} como predeterminada para cliente {}", addressId, id);
         customerService.setDefaultAddress(id, addressId);
         logger.info("Dirección {} marcada como predeterminada para cliente {}", addressId, id);
