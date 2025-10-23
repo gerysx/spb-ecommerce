@@ -47,40 +47,56 @@ public class CustomerServiceImpl implements CustomerService {
     public CustomerOutputDTO create(CustomerInputDTO input) {
         logger.info("Creando cliente con email: {}", input.getEmail());
 
+        // Verificar que el email no esté en uso
         customerRepository.findByEmail(input.getEmail())
                 .ifPresent(c -> {
                     logger.warn("Email ya en uso: {}", input.getEmail());
                     throw new EmailAlreadyInUseException(input.getEmail());
                 });
 
-        Customer customer = customerMapper.toEntity(input);
+        // Mapear cliente sin direcciones (mapper ignora direcciones)
+        Customer customerEntity = customerMapper.toEntity(input);
 
-        if (customer.getAddresses() != null && !customer.getAddresses().isEmpty()) {
-            // Usar helpers para cada dirección
-            List<Address> toAdd = new ArrayList<>(customer.getAddresses());
-            customer.getAddresses().clear();
+        // Procesar las direcciones manualmente
+        if (input.getAddresses() != null && !input.getAddresses().isEmpty()) {
+            List<Address> addressesToAdd = new ArrayList<>();
 
-            // Garantizar que solo una sea default
-            boolean defaultFound = false;
-            for (Address addr : toAdd) {
-                if (Boolean.TRUE.equals(addr.getDefaultAddress())) {
-                    if (!defaultFound) {
-                        defaultFound = true;
-                    } else {
-                        addr.setDefaultAddress(false);
-                    }
+            // Buscar índice de la primera dirección marcada como default en el input
+            int firstDefaultIndex = -1;
+            for (int i = 0; i < input.getAddresses().size(); i++) {
+                AddressInputDTO addressDto = input.getAddresses().get(i);
+                if (Boolean.TRUE.equals(addressDto.getDefaultAddress())) {
+                    firstDefaultIndex = i;
+                    break;
                 }
-                customer.addAddress(addr);
             }
 
-            if (!defaultFound && !toAdd.isEmpty()) {
-                toAdd.get(0).setDefaultAddress(true);
+            // Mapear y asignar customer y defaultAddress
+            for (int i = 0; i < input.getAddresses().size(); i++) {
+                AddressInputDTO addressDto = input.getAddresses().get(i);
+                Address addressEntity = addressMapper.toEntity(addressDto);
+                addressEntity.setCustomer(customerEntity);
+
+                if (firstDefaultIndex == -1) {
+                    // No hay default en el input, marcar la primera dirección como default
+                    addressEntity.setDefaultAddress(i == 0);
+                } else {
+                    // Solo la primera dirección con default=true se mantiene así
+                    addressEntity.setDefaultAddress(i == firstDefaultIndex);
+                }
+
+                addressesToAdd.add(addressEntity);
             }
+
+            // Asignar las direcciones al cliente
+            customerEntity.setAddresses(addressesToAdd);
         }
 
-        Customer saved = customerRepository.save(customer);
-        logger.info("Cliente creado correctamente: {}", saved.getId());
-        return customerMapper.toOutput(saved);
+        // Guardar cliente junto con las direcciones (en cascada)
+        Customer savedCustomer = customerRepository.save(customerEntity);
+
+        logger.info("Cliente creado correctamente: {}", savedCustomer.getId());
+        return customerMapper.toOutput(savedCustomer);
     }
 
     @Override

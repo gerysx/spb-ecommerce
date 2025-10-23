@@ -10,14 +10,20 @@ import lombok.*;
 @Table(name = "addresses", indexes = {
         @Index(name = "idx_address_customer", columnList = "customer_id")
 })
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 @EqualsAndHashCode(of = "id")
 public class Address {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
     @Column(nullable = false, length = 160)
@@ -35,7 +41,7 @@ public class Address {
     @Column(nullable = false, length = 80)
     private String country;
 
-    @JsonProperty("isDefault") 
+    @JsonProperty("isDefault")
     @Column(name = "is_default", nullable = false)
     private Boolean defaultAddress;
 }

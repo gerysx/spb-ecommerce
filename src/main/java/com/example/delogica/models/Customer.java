@@ -54,15 +54,18 @@ public class Customer {
         updatedAt = LocalDateTime.now();
     }
 
-    public void addAddress(Address a) {
-        if (a == null) return;
-        addresses.add(a);
-        a.setCustomer(this);
+    public void addAddress(Address address) {
+        if (address == null)
+            return;
+        address.setCustomer(this);
+        this.addresses.add(address);
     }
 
-    public void removeAddress(Address a) {
-        if (a == null) return;
-        addresses.remove(a);
-        a.setCustomer(null);
+    public void removeAddress(Address address) {
+        if (address == null)
+            return;
+        address.setCustomer(null);
+        this.addresses.remove(address);
     }
+
 }
