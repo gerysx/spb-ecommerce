@@ -62,9 +62,9 @@ public class ProductController {
     @ApiResponse(responseCode = "201", description = "Producto creado",
         content = @Content(schema = @Schema(implementation = ProductOutputDTO.class)))
     @ApiResponse(responseCode = "400", description = "Entrada inválida",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @ApiResponse(responseCode = "409", description = "SKU ya en uso",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @PostMapping
     public ResponseEntity<ProductOutputDTO> create(
             @Valid @RequestBody ProductInputDTO input,
@@ -106,7 +106,7 @@ public class ProductController {
     @ApiResponse(responseCode = "200", description = "Producto encontrado",
         content = @Content(schema = @Schema(implementation = ProductOutputDTO.class)))
     @ApiResponse(responseCode = "404", description = "Producto no encontrado",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @GetMapping("/{id}")
     public ProductOutputDTO detail(
             @Parameter(in = ParameterIn.PATH, description = "Identificador del producto", example = "1000")
@@ -144,11 +144,11 @@ public class ProductController {
     @ApiResponse(responseCode = "200", description = "Producto actualizado",
         content = @Content(schema = @Schema(implementation = ProductOutputDTO.class)))
     @ApiResponse(responseCode = "400", description = "Entrada inválida",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "Producto no encontrado",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @ApiResponse(responseCode = "409", description = "SKU ya en uso por otro producto",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @PutMapping("/{id}")
     public ProductOutputDTO update(
             @Parameter(in = ParameterIn.PATH, description = "Identificador del producto", example = "1000")
@@ -164,7 +164,7 @@ public class ProductController {
     @Operation(summary = "Eliminar producto", description = "Desactiva el producto (borrado lógico). No elimina registros históricos")
     @ApiResponse(responseCode = "204", description = "Producto desactivado")
     @ApiResponse(responseCode = "404", description = "Producto no encontrado",
-        content = @Content(schema = @Schema(implementation = org.springframework.http.ProblemDetail.class)))
+        content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @Parameter(in = ParameterIn.PATH, description = "Identificador del producto", example = "1000")
