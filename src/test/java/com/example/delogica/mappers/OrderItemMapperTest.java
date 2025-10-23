@@ -17,7 +17,7 @@ import com.example.delogica.models.OrderItem;
 import com.example.delogica.models.Product;
 
 @ExtendWith(MockitoExtension.class)
-public class OrderItemMapperTest {
+class OrderItemMapperTest {
 
     @Mock
     private ProductMapper productMapper;
@@ -34,11 +34,10 @@ public class OrderItemMapperTest {
         entity.setId(10L);
         entity.setProduct(product);
         entity.setQuantity(2);
-        entity.setUnitPrice(BigDecimal.valueOf(19.99));
+        entity.setUnitPrice(new BigDecimal("19.99"));
 
         ProductOutputDTO productOutputDTO = new ProductOutputDTO();
         productOutputDTO.setId(1L);
-        // Set other fields if needed
 
         Mockito.when(productMapper.toOutput(product)).thenReturn(productOutputDTO);
 
@@ -47,7 +46,8 @@ public class OrderItemMapperTest {
         assertNotNull(dto);
         assertEquals(10L, dto.getId());
         assertEquals(2, dto.getQuantity());
-        assertEquals(BigDecimal.valueOf(19.99), dto.getUnitPrice());
+        assertTrue(new BigDecimal("19.99").compareTo(dto.getUnitPrice()) == 0);
+        assertNotNull(dto.getProduct());
         assertEquals(1L, dto.getProduct().getId());
     }
 }
