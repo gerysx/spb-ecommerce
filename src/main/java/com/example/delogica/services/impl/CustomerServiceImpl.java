@@ -173,6 +173,14 @@ public class CustomerServiceImpl implements CustomerService {
         Customer customer = customerRepository.findByIdWithLock(customerId)
                 .orElseThrow(() -> ResourceNotFoundException.forId(Customer.class, customerId));
 
+        if (input.getEmail() != null && !input.getEmail().equalsIgnoreCase(customer.getEmail())) {
+            boolean emailExists = customerRepository.existsByEmail(input.getEmail());
+            if (emailExists) {
+                logger.warn("Intento de usar email duplicado {} en PUT /customers", input.getEmail());
+                throw new EmailAlreadyInUseException(input.getEmail());
+            }
+        }
+
         // Actualiza campos simples del cliente
         customerMapper.updateEntityFromDto(input, customer);
 

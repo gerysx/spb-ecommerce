@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -19,6 +20,7 @@ import lombok.Data;
 public class ProductInputDTO {
 
     @NotBlank(message = "El SKU es obligatorio")
+    @NotEmpty(message = "El SKU no puede estar vacio")
     @Size(max = 40, message = "El SKU no puede superar los 40 caracteres")
     @Schema(description = "SKU del producto", example = "SKU-ABC-001", maxLength = 40, requiredMode = Schema.RequiredMode.REQUIRED)
     private String sku;
