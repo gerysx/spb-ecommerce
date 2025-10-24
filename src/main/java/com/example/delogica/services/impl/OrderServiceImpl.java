@@ -213,6 +213,16 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("Transición de estado inválida: " + currentStatus + " -> " + newStatus);
         }
 
+        if (newStatus == OrderStatus.CANCELLED) {
+            logger.info("Devolviendo stock de productos para el pedido cancelado ID {}", id);
+            order.getItems().forEach(item -> {
+                Product product = item.getProduct();
+                int devolver = item.getQuantity();
+                product.setStock(product.getStock() + devolver);
+                logger.debug("Producto {} stock +{} (nuevo stock: {})", product.getSku(), devolver, product.getStock());
+            });
+        }
+
         order.setStatus(newStatus);
         orderRepository.save(order);
 
