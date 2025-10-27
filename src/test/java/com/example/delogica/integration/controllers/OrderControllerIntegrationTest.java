@@ -2,6 +2,7 @@ package com.example.delogica.integration.controllers;
 
 import com.example.delogica.dtos.input.OrderCreateInputDTO;
 import com.example.delogica.dtos.input.OrderItemInputDTO;
+import com.example.delogica.dtos.input.OrderStatusInputDTO;
 import com.example.delogica.models.*;
 import com.example.delogica.repositories.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,52 +34,58 @@ import jakarta.transaction.Transactional;
 @Transactional
 public class OrderControllerIntegrationTest {
 
-    @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired
+    private MockMvc mockMvc;
+    @Autowired
+    private ObjectMapper objectMapper;
 
-    @Autowired private CustomerRepository customerRepository;
-    @Autowired private AddressRepository addressRepository;
-    @Autowired private ProductRepository productRepository;
-    @Autowired private OrderRepository orderRepository;
+    @Autowired
+    private CustomerRepository customerRepository;
+    @Autowired
+    private AddressRepository addressRepository;
+    @Autowired
+    private ProductRepository productRepository;
+    @Autowired
+    private OrderRepository orderRepository;
 
     private Customer customer;
     private Address address;
     private Product product;
 
+    @BeforeEach
+    void setup() {
+        // Sufijo aleatorio para evitar choques con UNIQUE (email, sku) entre tests
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
 
-@BeforeEach
-void setup() {
-    // Sufijo aleatorio para evitar choques con UNIQUE (email, sku) entre tests
-    String suffix = UUID.randomUUID().toString().substring(0, 8);
+        // --- Customer (NOT NULL: full_name, email) ---
+        customer = new Customer();
+        customer.setFullName("Juan Test");
+        customer.setEmail("juan.test+" + suffix + "@delogica.example");
+        customer.setPhone("+34999999999");
+        customer = customerRepository.save(customer);
 
-    // --- Customer (NOT NULL: full_name, email) ---
-    customer = new Customer();
-    customer.setFullName("Juan Test");
-    customer.setEmail("juan.test+" + suffix + "@delogica.example");
-    customer.setPhone("+34999999999");
-    customer = customerRepository.save(customer);
+        // --- Address (NOT NULL: customer_id, line1, city, postal_code, country,
+        // is_default) ---
+        address = new Address();
+        address.setCustomer(customer);
+        address.setLine1("Calle Falsa 123");
+        address.setLine2(null); // opcional
+        address.setCity("Madrid");
+        address.setPostalCode("28001");
+        address.setCountry("España");
+        address.setDefaultAddress(true); // evita NULL en is_default
+        address = addressRepository.save(address);
 
-    // --- Address (NOT NULL: customer_id, line1, city, postal_code, country, is_default) ---
-    address = new Address();
-    address.setCustomer(customer);
-    address.setLine1("Calle Falsa 123");
-    address.setLine2(null);               // opcional
-    address.setCity("Madrid");
-    address.setPostalCode("28001");
-    address.setCountry("España");
-    address.setDefaultAddress(true);             // evita NULL en is_default
-    address = addressRepository.save(address);
-
-    // --- Product (NOT NULL: sku, name, price, stock; active también NOT NULL) ---
-    product = new Product();
-    product.setSku("SKU-" + suffix);
-    product.setName("Producto Test");
-    product.setDescription("Producto para IT");
-    product.setPrice(new BigDecimal("100.00")); // DECIMAL(12,2)
-    product.setStock(10);
-    product.setActive(true);
-    product = productRepository.save(product);
-}
+        // --- Product (NOT NULL: sku, name, price, stock; active también NOT NULL) ---
+        product = new Product();
+        product.setSku("SKU-" + suffix);
+        product.setName("Producto Test");
+        product.setDescription("Producto para IT");
+        product.setPrice(new BigDecimal("100.00")); // DECIMAL(12,2)
+        product.setStock(10);
+        product.setActive(true);
+        product = productRepository.save(product);
+    }
 
     // ------------------------------
     // CREATE ORDER
@@ -95,8 +102,8 @@ void setup() {
         input.setItems(List.of(item));
 
         mockMvc.perform(post("/api/orders")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(input)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(input)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").exists())
                 // Evita fragilidad por serialización de BigDecimal (200 vs 200.0)
@@ -143,8 +150,13 @@ void setup() {
         order.setTotal(BigDecimal.valueOf(100));
         order = orderRepository.save(order);
 
+        // Creamos el DTO con el nuevo estado
+        OrderStatusInputDTO statusDTO = new OrderStatusInputDTO();
+        statusDTO.setStatus("PAID");
+
         mockMvc.perform(put("/api/orders/" + order.getId() + "/status")
-                        .param("newStatus", "PAID"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(statusDTO)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAID"));
     }
@@ -162,9 +174,14 @@ void setup() {
         order.setTotal(BigDecimal.valueOf(100));
         order = orderRepository.save(order);
 
+        // Creamos el DTO con un estado no permitido
+        OrderStatusInputDTO statusDTO = new OrderStatusInputDTO();
+        statusDTO.setStatus("CREATED"); // Intentamos retroceder el estado
+
         mockMvc.perform(put("/api/orders/" + order.getId() + "/status")
-                        .param("newStatus", "CREATED"))
-                // Si tienes @ControllerAdvice mapeando IllegalStateException a 400, deja BAD_REQUEST
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(statusDTO)))
+                // Si tu ControllerAdvice mapea IllegalStateException a 400
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").exists());
     }
@@ -191,8 +208,8 @@ void setup() {
         order = orderRepository.save(order);
 
         mockMvc.perform(get("/api/orders")
-                        .param("customerId", customer.getId().toString())
-                        .param("status", "CREATED"))
+                .param("customerId", customer.getId().toString())
+                .param("status", "CREATED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(order.getId()));
     }

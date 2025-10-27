@@ -1,6 +1,7 @@
 package com.example.delogica.controllers;
 
 import com.example.delogica.dtos.input.OrderCreateInputDTO;
+import com.example.delogica.dtos.input.OrderStatusInputDTO;
 import com.example.delogica.dtos.output.OrderOutputDTO;
 import com.example.delogica.dtos.output.OrderSimpleOutputDTO;
 import com.example.delogica.models.OrderStatus;
@@ -12,9 +13,9 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springdoc.core.annotations.ParameterObject;
@@ -120,28 +121,36 @@ public class OrderController {
         }
 
         /**
-         * Cambia el estado del pedido siguiendo transiciones válidas
+         * Cambia el estado del pedido siguiendo transiciones válidas.
          */
         @Operation(summary = "Cambiar estado del pedido", description = """
-                        Cambia el estado del pedido si la transición es válida
-                        Válidas: CREATED -> PAID | CANCELLED; PAID -> SHIPPED | CANCELLED
-                        No válidas: SHIPPED o CANCELLED a cualquier otro estado
-                        """, requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody)
-        @ApiResponse(responseCode = "200", description = "Estado actualizado", content = @Content(schema = @Schema(implementation = OrderOutputDTO.class)))
-        @ApiResponse(responseCode = "400", description = "Entrada inválida", content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
-        @ApiResponse(responseCode = "404", description = "Pedido no encontrado", content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
-        @ApiResponse(responseCode = "409", description = "Transición de estado inválida", content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
+                        Cambia el estado del pedido si la transición es válida.
+                        Transiciones válidas:
+                        - CREATED → PAID | CANCELLED
+                        - PAID → SHIPPED | CANCELLED
+                        Transiciones no válidas:
+                        - SHIPPED o CANCELLED → cualquier otro estado
+                        """, requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, description = "Nuevo estado del pedido a aplicar", content = @Content(schema = @Schema(implementation = com.example.delogica.dtos.input.OrderStatusInputDTO.class), examples = {
+                        @ExampleObject(name = "Marcar como pagado", value = "{ \"status\": \"PAID\" }"),
+                        @ExampleObject(name = "Marcar como enviado", value = "{ \"status\": \"SHIPPED\" }"),
+                        @ExampleObject(name = "Cancelar pedido", value = "{ \"status\": \"CANCELLED\" }")
+        })))
+        @ApiResponses({
+                        @ApiResponse(responseCode = "200", description = "Estado actualizado correctamente", content = @Content(schema = @Schema(implementation = com.example.delogica.dtos.output.OrderOutputDTO.class))),
+                        @ApiResponse(responseCode = "400", description = "Entrada inválida o estado no reconocido", content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class))),
+                        @ApiResponse(responseCode = "404", description = "Pedido no encontrado", content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class))),
+                        @ApiResponse(responseCode = "409", description = "Transición de estado inválida", content = @Content(schema = @Schema(implementation = com.example.delogica.config.errors.ErrorResponse.class)))
+        })
         @PutMapping("/{id}/status")
         public ResponseEntity<OrderOutputDTO> changeOrderStatus(
-                        @Parameter(in = ParameterIn.PATH, description = "Identificador del pedido", example = "500") @PathVariable Long id,
-                        @Parameter(description = "Nuevo estado", required = true, examples = {
-                                        @ExampleObject(name = "PAID", value = "PAID"),
-                                        @ExampleObject(name = "SHIPPED", value = "SHIPPED"),
-                                        @ExampleObject(name = "CANCELLED", value = "CANCELLED")
-                        }) @RequestParam @NotNull(message = "El nuevo estado es obligatorio") OrderStatus newStatus) {
-                logger.info("Recibida petición PUT /api/orders/{}/status para cambiar estado a {}", id, newStatus);
-                OrderOutputDTO updatedOrder = orderService.changeStatus(id, newStatus);
-                logger.info("Estado del pedido ID {} cambiado a {}", id, newStatus);
+                        @Parameter(in = ParameterIn.PATH, description = "Identificador único del pedido", example = "500") @PathVariable Long id,
+
+                        @Valid @RequestBody @Parameter(description = "Nuevo estado del pedido en formato JSON", required = true) OrderStatusInputDTO input) {
+                logger.info("Recibida petición PUT /api/orders/{}/status para cambiar estado a {}", id,
+                                input.getStatus());
+                OrderOutputDTO updatedOrder = orderService.changeStatus(id, input);
+                logger.info("Estado del pedido ID {} cambiado a {}", id, input.getStatus());
                 return ResponseEntity.ok(updatedOrder);
         }
+
 }

@@ -97,12 +97,14 @@ public class ProductServiceImpl implements ProductService {
                     return ResourceNotFoundException.forId(Product.class, productId);
                 });
 
-        // si cambia SKU, validar exclusión por id
-        if (input.getSku() != null && !input.getSku().equals(db.getSku())) {
-            if (productRepository.existsBySkuAndIdNot(input.getSku(), productId)) {
+        if (input.getSku() != null) {
+            // solo validar exclusión si cambia realmente
+            if (!input.getSku().equals(db.getSku())
+                    && productRepository.existsBySkuAndIdNot(input.getSku(), productId)) {
                 logger.warn("Intento de actualizar producto con SKU ya usado: {}", input.getSku());
                 throw new SkuAlreadyInUseException(input.getSku());
             }
+            // actualizar SKU aunque sea el mismo (no rompe nada)
             db.setSku(input.getSku());
         }
 

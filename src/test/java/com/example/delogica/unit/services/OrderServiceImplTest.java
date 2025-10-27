@@ -1,6 +1,8 @@
 package com.example.delogica.unit.services;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
@@ -10,6 +12,7 @@ import java.util.*;
 import com.example.delogica.config.exceptions.ResourceNotFoundException;
 import com.example.delogica.dtos.input.OrderCreateInputDTO;
 import com.example.delogica.dtos.input.OrderItemInputDTO;
+import com.example.delogica.dtos.input.OrderStatusInputDTO;
 import com.example.delogica.dtos.output.OrderOutputDTO;
 import com.example.delogica.dtos.output.OrderSimpleOutputDTO;
 import com.example.delogica.mappers.OrderMapper;
@@ -291,44 +294,57 @@ public class OrderServiceImplTest {
     }
 
     // ------------ TEST changeStatus() --------------
+   @Test
+public void changeStatus_validTransition_changesStatus() {
+    Long orderId = 1L;
+    Order order = new Order();
+    order.setStatus(OrderStatus.CREATED);
+
+    when(orderRepository.findByIdWithLock(orderId)).thenReturn(Optional.of(order));
+    when(orderRepository.save(order)).thenReturn(order);
+
+    OrderOutputDTO outputDTO = new OrderOutputDTO();
+    when(orderMapper.toOutput(order)).thenReturn(outputDTO);
+
+    // <-- Creamos el DTO en lugar de pasar el enum directamente
+    OrderStatusInputDTO inputDTO = new OrderStatusInputDTO();
+    inputDTO.setStatus(OrderStatus.PAID.name());
+
+    OrderOutputDTO result = orderService.changeStatus(orderId, inputDTO);
+
+    assertEquals(outputDTO, result);
+    assertEquals(OrderStatus.PAID, order.getStatus());
+}
+
+
+   @Test
+public void changeStatus_invalidTransition_throwsException() {
+    Long orderId = 1L;
+    Order order = new Order();
+    order.setStatus(OrderStatus.SHIPPED);
+
+    when(orderRepository.findByIdWithLock(orderId)).thenReturn(Optional.of(order));
+
+    OrderStatusInputDTO inputDTO = new OrderStatusInputDTO();
+    inputDTO.setStatus(OrderStatus.CREATED.name());
+
+    IllegalStateException ex = assertThrows(IllegalStateException.class,
+            () -> orderService.changeStatus(orderId, inputDTO));
+    assertTrue(ex.getMessage().contains("Transición de estado inválida"));
+}
+
+
     @Test
-    public void changeStatus_validTransition_changesStatus() {
-        Long orderId = 1L;
-        Order order = new Order();
-        order.setStatus(OrderStatus.CREATED);
+public void changeStatus_orderNotFound_throwsException() {
+    Long orderId = 1L;
 
-        when(orderRepository.findByIdWithLock(orderId)).thenReturn(Optional.of(order));
-        when(orderRepository.save(order)).thenReturn(order);
+    when(orderRepository.findByIdWithLock(orderId)).thenReturn(Optional.empty());
 
-        OrderOutputDTO outputDTO = new OrderOutputDTO();
-        when(orderMapper.toOutput(order)).thenReturn(outputDTO);
+    OrderStatusInputDTO inputDTO = new OrderStatusInputDTO();
+    inputDTO.setStatus(OrderStatus.PAID.name());
 
-        OrderOutputDTO result = orderService.changeStatus(orderId, OrderStatus.PAID);
+    assertThrows(ResourceNotFoundException.class,
+            () -> orderService.changeStatus(orderId, inputDTO));
+}
 
-        assertEquals(outputDTO, result);
-        assertEquals(OrderStatus.PAID, order.getStatus());
-    }
-
-    @Test
-    public void changeStatus_invalidTransition_throwsException() {
-        Long orderId = 1L;
-        Order order = new Order();
-        order.setStatus(OrderStatus.SHIPPED);
-
-        when(orderRepository.findByIdWithLock(orderId)).thenReturn(Optional.of(order));
-
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> orderService.changeStatus(orderId, OrderStatus.CREATED));
-        assertTrue(ex.getMessage().contains("Transición de estado inválida"));
-    }
-
-    @Test
-    public void changeStatus_orderNotFound_throwsException() {
-        Long orderId = 1L;
-
-        when(orderRepository.findByIdWithLock(orderId)).thenReturn(Optional.empty());
-
-        assertThrows(ResourceNotFoundException.class,
-                () -> orderService.changeStatus(orderId, OrderStatus.PAID));
-    }
 }

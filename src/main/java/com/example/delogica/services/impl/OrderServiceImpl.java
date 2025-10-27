@@ -19,6 +19,7 @@ import com.example.delogica.config.exceptions.ResourceNotFoundException;
 import com.example.delogica.config.specifications.OrderSpecifications;
 import com.example.delogica.dtos.input.OrderCreateInputDTO;
 import com.example.delogica.dtos.input.OrderItemInputDTO;
+import com.example.delogica.dtos.input.OrderStatusInputDTO;
 import com.example.delogica.dtos.output.OrderOutputDTO;
 import com.example.delogica.dtos.output.OrderSimpleOutputDTO;
 import com.example.delogica.mappers.OrderMapper;
@@ -177,57 +178,63 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toOutput(order);
     }
 
-    @Override
-    @Transactional
-    public OrderOutputDTO changeStatus(Long id, OrderStatus newStatus) {
-        logger.info("Cambiando estado del pedido ID {} a {}", id, newStatus);
-
-        Order order = orderRepository.findByIdWithLock(id)
-                .orElseThrow(() -> ResourceNotFoundException.forId(Order.class, id));
-
-        OrderStatus currentStatus = order.getStatus();
-
-        logger.debug("Estado actual: {}", currentStatus);
-
-        boolean validTransition = false;
-
-        switch (currentStatus) {
-            case CREATED:
-                if (newStatus == OrderStatus.PAID || newStatus == OrderStatus.CANCELLED)
-                    validTransition = true;
-                break;
-            case PAID:
-                if (newStatus == OrderStatus.SHIPPED)
-                    validTransition = true;
-                else if (newStatus == OrderStatus.CANCELLED && currentStatus != OrderStatus.SHIPPED)
-                    validTransition = true;
-                break;
-            case SHIPPED:
-            case CANCELLED:
-                validTransition = false;
-                break;
-        }
-
-        if (!validTransition) {
-            logger.warn("Intento de transición inválida: {} -> {}", currentStatus, newStatus);
-            throw new IllegalStateException("Transición de estado inválida: " + currentStatus + " -> " + newStatus);
-        }
-
-        if (newStatus == OrderStatus.CANCELLED) {
-            logger.info("Devolviendo stock de productos para el pedido cancelado ID {}", id);
-            order.getItems().forEach(item -> {
-                Product product = item.getProduct();
-                int devolver = item.getQuantity();
-                product.setStock(product.getStock() + devolver);
-                logger.debug("Producto {} stock +{} (nuevo stock: {})", product.getSku(), devolver, product.getStock());
-            });
-        }
-
-        order.setStatus(newStatus);
-        orderRepository.save(order);
-
-        logger.info("Estado del pedido ID {} cambiado exitosamente a {}", id, newStatus);
-
-        return orderMapper.toOutput(order);
+  @Override
+@Transactional
+public OrderOutputDTO changeStatus(Long id, OrderStatusInputDTO input) {
+    OrderStatus newStatus;
+    try {
+        newStatus = OrderStatus.valueOf(input.getStatus().toUpperCase());
+    } catch (IllegalArgumentException e) {
+        throw new IllegalArgumentException("Estado inválido: " + input.getStatus());
     }
+
+    logger.info("Cambiando estado del pedido ID {} a {}", id, newStatus);
+
+    Order order = orderRepository.findByIdWithLock(id)
+            .orElseThrow(() -> ResourceNotFoundException.forId(Order.class, id));
+
+    OrderStatus currentStatus = order.getStatus();
+    logger.debug("Estado actual: {}", currentStatus);
+
+    boolean validTransition = false;
+
+    switch (currentStatus) {
+        case CREATED:
+            if (newStatus == OrderStatus.PAID || newStatus == OrderStatus.CANCELLED)
+                validTransition = true;
+            break;
+        case PAID:
+            if (newStatus == OrderStatus.SHIPPED)
+                validTransition = true;
+            else if (newStatus == OrderStatus.CANCELLED && currentStatus != OrderStatus.SHIPPED)
+                validTransition = true;
+            break;
+        case SHIPPED:
+        case CANCELLED:
+            validTransition = false;
+            break;
+    }
+
+    if (!validTransition) {
+        logger.warn("Intento de transición inválida: {} -> {}", currentStatus, newStatus);
+        throw new IllegalStateException("Transición de estado inválida: " + currentStatus + " -> " + newStatus);
+    }
+
+    if (newStatus == OrderStatus.CANCELLED) {
+        logger.info("Devolviendo stock de productos para el pedido cancelado ID {}", id);
+        order.getItems().forEach(item -> {
+            Product product = item.getProduct();
+            int devolver = item.getQuantity();
+            product.setStock(product.getStock() + devolver);
+            logger.debug("Producto {} stock +{} (nuevo stock: {})", product.getSku(), devolver, product.getStock());
+        });
+    }
+
+    order.setStatus(newStatus);
+    orderRepository.save(order);
+
+    logger.info("Estado del pedido ID {} cambiado exitosamente a {}", id, newStatus);
+
+    return orderMapper.toOutput(order);
+}
 }
