@@ -6,5 +6,10 @@ public enum ErrorCode {
     CONFLICT,
     FORBIDDEN,
     INTERNAL_ERROR,
-    BAD_REQUEST
+    BAD_REQUEST,
+    JWT_INVALID,
+    JWT_EXPIRED,
+    JWT_MISSING,
+    UNAUTHORIZED
+
 }

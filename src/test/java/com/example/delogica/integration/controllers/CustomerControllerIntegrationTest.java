@@ -1,35 +1,24 @@
 package com.example.delogica.integration.controllers;
 
-import com.example.delogica.ApiCommerceApplication;
+import com.example.delogica.integration.common.AbstractIntegrationTest;
 import com.example.delogica.models.Address;
 import com.example.delogica.models.Customer;
 import com.example.delogica.repositories.AddressRepository;
 import com.example.delogica.repositories.CustomerRepository;
-
+import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
-
-import jakarta.transaction.Transactional;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(classes = ApiCommerceApplication.class)
-@ActiveProfiles("testing")
-@AutoConfigureMockMvc
 @Transactional
-public class CustomerControllerIntegrationTest {
+public class CustomerControllerIntegrationTest extends AbstractIntegrationTest {
 
-    @Autowired private MockMvc mockMvc;
     @Autowired private CustomerRepository customerRepository;
     @Autowired private AddressRepository addressRepository;
 
@@ -61,7 +50,6 @@ public class CustomerControllerIntegrationTest {
         """.formatted(name, email, phone);
     }
 
-    /** addressJson con defaultAddress nullable para poder enviar null/false sin violar la regla */
     static String addressJson(String line1, String city, String postal, String country, Boolean defaultAddress) {
         String def = defaultAddress == null ? "null" : String.valueOf(defaultAddress);
         return """
@@ -81,7 +69,6 @@ public class CustomerControllerIntegrationTest {
         return local + "@t.es";
     }
 
-    /** Crea y persiste una Address ligada a existingCustomer */
     private Address createAddress(String line1, String city, String postal, String country, boolean isDefault) {
         Address a = new Address();
         a.setCustomer(existingCustomer);
@@ -113,7 +100,7 @@ public class CustomerControllerIntegrationTest {
                 "juan." + uniqueSuffix + "@t.es",
                 "600111222");
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isCreated())
@@ -132,7 +119,7 @@ public class CustomerControllerIntegrationTest {
             }
         """;
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payloadSinEmail))
             .andExpect(status().isBadRequest());
@@ -144,12 +131,13 @@ public class CustomerControllerIntegrationTest {
                 existingCustomer.getEmail(),
                 "600111222");
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payloadDuplicado))
             .andExpect(result -> {
                 int sc = result.getResponse().getStatus();
-                assertThat(sc == 409 || sc == 400).as("status debe ser 409 o 400").isTrue();
+                assertThat(sc == 409 || sc == 400)
+                    .as("status debe ser 409 o 400").isTrue();
             });
     }
 
@@ -159,7 +147,7 @@ public class CustomerControllerIntegrationTest {
                 "tc" + uniqueSuffix + "@t.es",
                 "60000000");
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isBadRequest());
@@ -171,7 +159,7 @@ public class CustomerControllerIntegrationTest {
                 "tl" + uniqueSuffix + "@t.es",
                 "6000000000");
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isBadRequest());
@@ -184,7 +172,7 @@ public class CustomerControllerIntegrationTest {
                 longMail,
                 "600123456");
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isBadRequest());
@@ -196,18 +184,18 @@ public class CustomerControllerIntegrationTest {
                 "addrnull" + uniqueSuffix + "@t.es",
                 "600234567");
 
-        mockMvc.perform(post("/api/customers")
+        mockMvc.perform(authPost("/api/customers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isBadRequest());
     }
 
     // ---------------------------------------------------------------------
-    // LIST CUSTOMERS (PAGE + FILTER)
+    // LIST CUSTOMERS
     // ---------------------------------------------------------------------
     @Test
     void listCustomers_withoutFilter_returnsPage200() throws Exception {
-        mockMvc.perform(get("/api/customers")
+        mockMvc.perform(authGet("/api/customers")
                 .param("page", "0").param("size", "5"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content").isArray())
@@ -216,7 +204,7 @@ public class CustomerControllerIntegrationTest {
 
     @Test
     void listCustomers_withEmailFilter_returnsFilteredPage() throws Exception {
-        mockMvc.perform(get("/api/customers")
+        mockMvc.perform(authGet("/api/customers")
                 .param("email", existingCustomer.getEmail())
                 .param("page", "0").param("size", "10"))
             .andExpect(status().isOk())
@@ -228,12 +216,12 @@ public class CustomerControllerIntegrationTest {
         String p1 = customerJson("Pag Uno " + uniqueSuffix, "pag1." + uniqueSuffix + "@t.es", "601000001");
         String p2 = customerJson("Pag Dos " + uniqueSuffix, "pag2." + uniqueSuffix + "@t.es", "601000002");
 
-        mockMvc.perform(post("/api/customers").contentType(MediaType.APPLICATION_JSON).content(p1))
+        mockMvc.perform(authPost("/api/customers").contentType(MediaType.APPLICATION_JSON).content(p1))
             .andExpect(status().isCreated());
-        mockMvc.perform(post("/api/customers").contentType(MediaType.APPLICATION_JSON).content(p2))
+        mockMvc.perform(authPost("/api/customers").contentType(MediaType.APPLICATION_JSON).content(p2))
             .andExpect(status().isCreated());
 
-        mockMvc.perform(get("/api/customers")
+        mockMvc.perform(authGet("/api/customers")
                 .param("page", "1").param("size", "1"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.size").value(1))
@@ -246,7 +234,7 @@ public class CustomerControllerIntegrationTest {
     // ---------------------------------------------------------------------
     @Test
     void getCustomer_existing_returns200_andBody() throws Exception {
-        mockMvc.perform(get("/api/customers/" + existingCustomer.getId()))
+        mockMvc.perform(authGet("/api/customers/" + existingCustomer.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(existingCustomer.getId()))
             .andExpect(jsonPath("$.email").value(existingCustomer.getEmail()));
@@ -254,7 +242,7 @@ public class CustomerControllerIntegrationTest {
 
     @Test
     void getCustomer_notFound_returns404() throws Exception {
-        mockMvc.perform(get("/api/customers/99999999"))
+        mockMvc.perform(authGet("/api/customers/99999999"))
             .andExpect(status().isNotFound());
     }
 
@@ -266,7 +254,7 @@ public class CustomerControllerIntegrationTest {
         String nuevoEmail = "upd." + uniqueSuffix + "@t.es";
         String payload = customerJson("Cliente Base Editado", nuevoEmail, "600222333");
 
-        mockMvc.perform(put("/api/customers/" + existingCustomer.getId())
+        mockMvc.perform(authPut("/api/customers/" + existingCustomer.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isOk())
@@ -278,7 +266,7 @@ public class CustomerControllerIntegrationTest {
     void updateCustomer_notFound_returns404() throws Exception {
         String payload = customerJson("No Existe", "no." + uniqueSuffix + "@t.es", "600222333");
 
-        mockMvc.perform(put("/api/customers/99999999")
+        mockMvc.perform(authPut("/api/customers/99999999")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isNotFound());
@@ -289,23 +277,20 @@ public class CustomerControllerIntegrationTest {
     // ---------------------------------------------------------------------
     @Test
     void deleteCustomer_existing_returns204_andRemovesIt() throws Exception {
-        mockMvc.perform(delete("/api/customers/" + existingCustomer.getId()))
+        mockMvc.perform(authDelete("/api/customers/" + existingCustomer.getId()))
             .andExpect(status().isNoContent());
 
         assertThat(customerRepository.findById(existingCustomer.getId())).isEmpty();
     }
 
     // ---------------------------------------------------------------------
-    // CREATE ADDRESS for CUSTOMER
+    // CREATE ADDRESS
     // ---------------------------------------------------------------------
     @Test
     void createAddress_forCustomer_returns201_andBody() throws Exception {
-        // No marcamos default; la primera se marcará automáticamente en servicio
         String payload = addressJson("Calle 123", "Madrid", "28001", "España", null);
 
-        customerRepository.flush();
-
-        mockMvc.perform(post("/api/customers/{id}/addresses", existingCustomer.getId())
+        mockMvc.perform(authPost("/api/customers/{id}/addresses", existingCustomer.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isCreated())
@@ -314,7 +299,6 @@ public class CustomerControllerIntegrationTest {
 
     @Test
     void createAddress_missingRequiredField_returns400() throws Exception {
-        // Falta postalCode (NOT NULL)
         String payload = """
             {
               "line1": "Calle Test 123",
@@ -324,7 +308,7 @@ public class CustomerControllerIntegrationTest {
             }
         """;
 
-        mockMvc.perform(post("/api/customers/" + existingCustomer.getId() + "/addresses")
+        mockMvc.perform(authPost("/api/customers/" + existingCustomer.getId() + "/addresses")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
             .andExpect(status().isBadRequest());
@@ -338,14 +322,9 @@ public class CustomerControllerIntegrationTest {
         Address a1 = createAddress("Calle A", "Madrid", "28001", "España", true);
         Address a2 = createAddress("Calle B", "Madrid", "28002", "España", false);
 
-        addressRepository.flush();
-        customerRepository.flush();
-
-        mockMvc.perform(put("/api/customers/{id}/addresses/{addressId}/default",
+        mockMvc.perform(authPut("/api/customers/{id}/addresses/{addressId}/default",
                 existingCustomer.getId(), a2.getId()))
             .andExpect(status().isNoContent());
-
-        addressRepository.flush();
 
         var r1 = addressRepository.findById(a1.getId()).orElseThrow();
         var r2 = addressRepository.findById(a2.getId()).orElseThrow();

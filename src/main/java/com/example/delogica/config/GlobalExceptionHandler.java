@@ -1,7 +1,7 @@
 package com.example.delogica.config;
 
 import java.time.Instant;
-
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -32,6 +32,7 @@ import com.example.delogica.config.errors.ErrorResponse;
 import com.example.delogica.config.exceptions.DefaultAddressChangeNotAllowedException;
 import com.example.delogica.config.exceptions.EmailAlreadyInUseException;
 import com.example.delogica.config.exceptions.InsufficientStockException;
+import com.example.delogica.config.exceptions.JwtAuthenticationException;
 import com.example.delogica.config.exceptions.ResourceNotFoundException;
 import com.example.delogica.config.exceptions.SkuAlreadyInUseException;
 
@@ -180,6 +181,23 @@ public class GlobalExceptionHandler {
                                 .build();
 
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+
+        // ===== 500
+        @ExceptionHandler(JwtAuthenticationException.class)
+        public ResponseEntity<ErrorResponse> handleJwtAuthentication(JwtAuthenticationException ex,
+                        jakarta.servlet.http.HttpServletRequest request) {
+
+                ErrorResponse response = ErrorResponse.builder()
+                                .timestamp(LocalDateTime.now().toString())
+                                .path(request.getRequestURI())
+                                .status(ex.getStatus().value())
+                                .error(ex.getStatus().getReasonPhrase())
+                                .code(ex.getCode())
+                                .message(ex.getMessage())
+                                .build();
+
+                return ResponseEntity.status(ex.getStatus()).body(response);
         }
 
         // ===== Helpers

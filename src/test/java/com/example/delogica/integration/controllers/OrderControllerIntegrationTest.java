@@ -3,50 +3,37 @@ package com.example.delogica.integration.controllers;
 import com.example.delogica.dtos.input.OrderCreateInputDTO;
 import com.example.delogica.dtos.input.OrderItemInputDTO;
 import com.example.delogica.dtos.input.OrderStatusInputDTO;
+import com.example.delogica.integration.common.AbstractIntegrationTest;
 import com.example.delogica.models.*;
 import com.example.delogica.repositories.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import jakarta.transaction.Transactional;
-
-@SpringBootTest(classes = com.example.delogica.ApiCommerceApplication.class)
+/**
+ * Tests de integración para OrderController.
+ * Hereda de AbstractIntegrationTest para usar JWT real sin tocar la BD.
+ */
 @ActiveProfiles("testing")
-@AutoConfigureMockMvc
 @Transactional
-public class OrderControllerIntegrationTest {
+public class OrderControllerIntegrationTest extends AbstractIntegrationTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @Autowired
-    private CustomerRepository customerRepository;
-    @Autowired
-    private AddressRepository addressRepository;
-    @Autowired
-    private ProductRepository productRepository;
-    @Autowired
-    private OrderRepository orderRepository;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private CustomerRepository customerRepository;
+    @Autowired private AddressRepository addressRepository;
+    @Autowired private ProductRepository productRepository;
+    @Autowired private OrderRepository orderRepository;
 
     private Customer customer;
     private Address address;
@@ -54,34 +41,31 @@ public class OrderControllerIntegrationTest {
 
     @BeforeEach
     void setup() {
-        // Sufijo aleatorio para evitar choques con UNIQUE (email, sku) entre tests
         String suffix = UUID.randomUUID().toString().substring(0, 8);
 
-        // --- Customer (NOT NULL: full_name, email) ---
+        // --- Customer ---
         customer = new Customer();
         customer.setFullName("Juan Test");
         customer.setEmail("juan.test+" + suffix + "@delogica.example");
         customer.setPhone("+34999999999");
         customer = customerRepository.save(customer);
 
-        // --- Address (NOT NULL: customer_id, line1, city, postal_code, country,
-        // is_default) ---
+        // --- Address ---
         address = new Address();
         address.setCustomer(customer);
         address.setLine1("Calle Falsa 123");
-        address.setLine2(null); // opcional
         address.setCity("Madrid");
         address.setPostalCode("28001");
         address.setCountry("España");
-        address.setDefaultAddress(true); // evita NULL en is_default
+        address.setDefaultAddress(true);
         address = addressRepository.save(address);
 
-        // --- Product (NOT NULL: sku, name, price, stock; active también NOT NULL) ---
+        // --- Product ---
         product = new Product();
         product.setSku("SKU-" + suffix);
         product.setName("Producto Test");
         product.setDescription("Producto para IT");
-        product.setPrice(new BigDecimal("100.00")); // DECIMAL(12,2)
+        product.setPrice(new BigDecimal("100.00"));
         product.setStock(10);
         product.setActive(true);
         product = productRepository.save(product);
@@ -101,13 +85,12 @@ public class OrderControllerIntegrationTest {
         input.setShippingAddressId(address.getId());
         input.setItems(List.of(item));
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(authPost("/api/orders")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(input)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").exists())
-                // Evita fragilidad por serialización de BigDecimal (200 vs 200.0)
-                .andExpect(jsonPath("$.total").value(200));
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").exists())
+            .andExpect(jsonPath("$.total").value(200));
     }
 
     // ------------------------------
@@ -131,10 +114,10 @@ public class OrderControllerIntegrationTest {
         order.setItems(List.of(item));
         order = orderRepository.save(order);
 
-        mockMvc.perform(get("/api/orders/" + order.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(order.getId()))
-                .andExpect(jsonPath("$.total").value(300));
+        mockMvc.perform(authGet("/api/orders/{id}", order.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(order.getId()))
+            .andExpect(jsonPath("$.total").value(300));
     }
 
     // ------------------------------
@@ -150,15 +133,14 @@ public class OrderControllerIntegrationTest {
         order.setTotal(BigDecimal.valueOf(100));
         order = orderRepository.save(order);
 
-        // Creamos el DTO con el nuevo estado
         OrderStatusInputDTO statusDTO = new OrderStatusInputDTO();
         statusDTO.setStatus("PAID");
 
-        mockMvc.perform(put("/api/orders/" + order.getId() + "/status")
+        mockMvc.perform(authPut("/api/orders/{id}/status", order.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(statusDTO)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("PAID"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("PAID"));
     }
 
     // ------------------------------
@@ -174,16 +156,14 @@ public class OrderControllerIntegrationTest {
         order.setTotal(BigDecimal.valueOf(100));
         order = orderRepository.save(order);
 
-        // Creamos el DTO con un estado no permitido
         OrderStatusInputDTO statusDTO = new OrderStatusInputDTO();
-        statusDTO.setStatus("CREATED"); // Intentamos retroceder el estado
+        statusDTO.setStatus("CREATED"); // Retroceso no permitido
 
-        mockMvc.perform(put("/api/orders/" + order.getId() + "/status")
+        mockMvc.perform(authPut("/api/orders/{id}/status", order.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(statusDTO)))
-                // Si tu ControllerAdvice mapea IllegalStateException a 400
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").exists());
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").exists());
     }
 
     // ------------------------------
@@ -207,10 +187,10 @@ public class OrderControllerIntegrationTest {
         order.setItems(List.of(item));
         order = orderRepository.save(order);
 
-        mockMvc.perform(get("/api/orders")
+        mockMvc.perform(authGet("/api/orders")
                 .param("customerId", customer.getId().toString())
                 .param("status", "CREATED"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(order.getId()));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].id").value(order.getId()));
     }
 }
