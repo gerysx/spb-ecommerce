@@ -17,7 +17,7 @@ public class OrderItemSimpleOutputDTO {
     @Schema(description = "Precio unitario al momento del pedido", example = "19.99")
     private BigDecimal unitPrice;
 
-    @Schema(description = "Total de línea (unitPrice × quantity)", example = "39.98")
+    @Schema(description = "Total de línea (unitPrice x quantity)", example = "39.98")
     public BigDecimal getLineTotal() {
         if (unitPrice == null || quantity == null) return BigDecimal.ZERO;
         return unitPrice.multiply(BigDecimal.valueOf(quantity));

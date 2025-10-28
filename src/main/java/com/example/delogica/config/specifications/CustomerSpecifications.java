@@ -18,7 +18,9 @@ public final class CustomerSpecifications {
      * Devuelve una especificación que filtra los clientes cuyo email
      * contiene el texto indicado, sin distinguir mayúsculas ni minúsculas.
      * Si el valor es nulo o vacío, no aplica ningún filtro.
-     *
+     * @root representa la raíz de la consulta, es decir, la entidad Customer en sí.
+     * @cq (CriteriaQuery<?>) → representa la consulta en construcción
+     * @cb (CriteriaBuilder) → el constructor de criterios, usado para crear condiciones (where, like, equal, etc.)            
      * @param email texto a buscar dentro del email del cliente
      * @return especificación JPA para filtrar por email o null si no aplica
      */

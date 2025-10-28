@@ -45,7 +45,7 @@ public class SecurityConfig {
                                 "/api-docs/**",
                                 "/error")
                         .permitAll()
-                        .anyRequest().authenticated() // resto requiere JWT
+                        .anyRequest().authenticated() 
                 )
 
                 // Política stateless: no guarda sesión en el servidor
@@ -58,8 +58,7 @@ public class SecurityConfig {
     }
 
     /**
-     * Exposición del AuthenticationManager para otras partes del sistema (si se usa
-     * más adelante).
+     * Exposición del AuthenticationManager para otras partes del sistema 
      */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {

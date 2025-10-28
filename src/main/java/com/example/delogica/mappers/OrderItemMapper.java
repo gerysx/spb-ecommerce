@@ -10,7 +10,7 @@ import com.example.delogica.dtos.output.*;
         ProductMapper.class }, unmappedTargetPolicy = ReportingPolicy.ERROR, nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
 public interface OrderItemMapper {
 
-    // INPUT → ENTITY
+   
     // Regla de negocio: unitPrice se obtiene del Product en la capa de servicio
     // Por ello lo ignoramos en el mapeo de entrada (aunque exista en DTO heredado)
     @Mapping(target = "id", ignore = true)
@@ -19,7 +19,7 @@ public interface OrderItemMapper {
     @Mapping(target = "unitPrice", ignore = true)
     OrderItem toEntity(OrderItemInputDTO dto);
 
-    // ENTITY → OUTPUT
+    
     OrderItemOutputDTO toOutput(OrderItem entity);
 
     @Mapping(target = "customerId", source = "customer.id")

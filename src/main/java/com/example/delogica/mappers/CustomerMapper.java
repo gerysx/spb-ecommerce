@@ -8,7 +8,7 @@ import com.example.delogica.dtos.output.CustomerOutputDTO;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR)
 public interface CustomerMapper {
 
-    // Para creación: las direcciones se gestionan en el servicio, no desde el mapper
+    
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "addresses", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
@@ -17,7 +17,7 @@ public interface CustomerMapper {
 
     CustomerOutputDTO toOutput(Customer entity);
 
-    // Para update: ignorar id, timestamps y addresses (se tratan manualmente)
+    
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "addresses", ignore = true)
     @Mapping(target = "createdAt", ignore = true)

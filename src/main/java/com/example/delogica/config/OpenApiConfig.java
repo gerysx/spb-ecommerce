@@ -12,12 +12,12 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @OpenAPIDefinition(info = @Info(title = "Delogica API", version = "1.0.0", description = "API para la gestión de clientes, pedidos y productos", contact = @Contact(name = "Equipo Delogica", email = "german.alvarez@delogica.example"), license = @License(name = "Apache-2.0")), servers = {
-        @Server(url = "http://localhost:8080", description = "Servidor local")
+                @Server(url = "http://localhost:8080", description = "Servidor local")
 },
 
-        security = {
-                @SecurityRequirement(name = "bearerAuth")
-        })
+                security = {
+                                @SecurityRequirement(name = "bearerAuth")
+                })
 @SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer", bearerFormat = "JWT")
 public class OpenApiConfig {
 }
