@@ -1,7 +1,24 @@
 version: "3.9"
 
 services:
-  mysql:
+  shop-app:
+    build: .
+    container_name: shop-app
+    ports:
+      - "8080:8080"
+    depends_on:
+      shop-mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://shop-mysql:3306/shopdb?useSSL=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: shopuser
+      SPRING_DATASOURCE_PASSWORD: shoppass
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.MySQL8Dialect
+      JWT_SECRET: ${JWT_SECRET} # heredado desde tu entorno Windows
+    networks:
+      - app-net
+
+  shop-mysql:
     image: mysql:8.0
     container_name: shop-mysql
     restart: unless-stopped
@@ -24,6 +41,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - app-net
 
 volumes:
   db_data:
+
+networks:
+  app-net:
+    driver: bridge

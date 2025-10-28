@@ -116,10 +116,10 @@
       <scope>runtime</scope>
     </dependency>
     <dependency>
-  <groupId>org.springframework.boot</groupId>
-  <artifactId>spring-boot-configuration-processor</artifactId>
-  <optional>true</optional>
-</dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
 
   </dependencies>
 
@@ -150,8 +150,9 @@
           </annotationProcessorPaths>
           <!-- Útil si usas JPMS en JDK >=9 -->
           <compilerArgs>
-            <arg>-Amapstruct.defaultComponentModel=spring</arg>
+            <compilerArg>-Amapstruct.defaultComponentModel=spring</compilerArg>
           </compilerArgs>
+
         </configuration>
       </plugin>
 
@@ -239,6 +240,20 @@
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>3.5.7</version> <!-- coincide con tu parent -->
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
 
     </plugins>
   </build>
